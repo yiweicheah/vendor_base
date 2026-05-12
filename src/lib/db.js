@@ -1,0 +1,339 @@
+import { supabase } from './supabase';
+
+// ─── Case conversion helpers ──────────────────────────────────────────────────
+
+function toCamel(obj) {
+  if (Array.isArray(obj)) return obj.map(toCamel);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [
+        k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()),
+        toCamel(v),
+      ])
+    );
+  }
+  return obj;
+}
+
+function toSnake(str) {
+  return str.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
+}
+
+function toSnakeObj(obj) {
+  if (Array.isArray(obj)) return obj.map(toSnakeObj);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [toSnake(k), toSnakeObj(v)])
+    );
+  }
+  return obj;
+}
+
+// ─── User ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Look up or create the DB user record for a Supabase auth user.
+ * Returns { id, uid, displayName, email } (camelCase).
+ */
+export async function resolveUser(supabaseUser) {
+  try {
+    const { data: existing } = await supabase
+      .from('user')
+      .select('id, uid, display_name, email')
+      .eq('uid', supabaseUser.id)
+      .maybeSingle();
+
+    if (existing) return toCamel(existing);
+
+    const displayName =
+      supabaseUser.user_metadata?.display_name ||
+      supabaseUser.user_metadata?.full_name ||
+      '';
+
+    const { data: created, error } = await supabase
+      .from('user')
+      .insert({ uid: supabaseUser.id, display_name: displayName, email: supabaseUser.email ?? '' })
+      .select('id, uid, display_name, email')
+      .single();
+
+    if (error) throw error;
+    return toCamel(created);
+  } catch (err) {
+    console.error('resolveUser error:', err);
+    return null;
+  }
+}
+
+// ─── Org membership ───────────────────────────────────────────────────────────
+
+/**
+ * Load all org memberships for the given DB user UUID.
+ * Returns [{ org: { id, name, slug }, role }].
+ */
+export async function loadAllMemberships(dbUserId) {
+  try {
+    const { data, error } = await supabase
+      .from('organization_members')
+      .select('role, org:organization!org_id(id, name, slug)')
+      .eq('user_id', dbUserId);
+    if (error) throw error;
+    return (data ?? []).map((m) => ({ org: toCamel(m.org), role: m.role }));
+  } catch (err) {
+    console.error('loadAllMemberships error:', err);
+    return [];
+  }
+}
+
+// ─── Transactions ─────────────────────────────────────────────────────────────
+
+export async function loadTransactions(orgId) {
+  try {
+    const { data, error } = await supabase
+      .from('transaction')
+      .select(`
+        id,
+        created_at,
+        notes,
+        created_by:user!created_by_id(display_name),
+        event:event!event_id(id, name),
+        transaction_lines(
+          id, side, type,
+          card_external_id, card_name, card_number, card_set_name, card_lang, card_image_url,
+          market_price_myr, price_source,
+          sealed_name, sealed_reference_price,
+          qty, unit_price_myr
+        )
+      `)
+      .eq('org_id', orgId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+    return toCamel(data ?? []);
+  } catch (err) {
+    console.error('loadTransactions error:', err);
+    return [];
+  }
+}
+
+export async function saveTransaction({ orgId, createdById, notes, eventId }) {
+  const { data, error } = await supabase
+    .from('transaction')
+    .insert({ org_id: orgId, created_by_id: createdById, notes: notes ?? null, event_id: eventId ?? null })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+export async function saveTransactionLine(vars) {
+  const row = toSnakeObj(vars);
+  const { error } = await supabase.from('transaction_lines').insert(row);
+  if (error) throw error;
+}
+
+export async function deleteTransaction({ txId, deletedById }) {
+  const { error } = await supabase
+    .from('transaction')
+    .update({ deleted_at: new Date().toISOString(), deleted_by_id: deletedById })
+    .eq('id', txId);
+  if (error) throw error;
+}
+
+export async function updateTransactionNotes({ txId, notes }) {
+  const { error } = await supabase
+    .from('transaction')
+    .update({ notes: notes ?? null })
+    .eq('id', txId);
+  if (error) throw error;
+}
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+export async function loadEvents(orgId) {
+  try {
+    const { data, error } = await supabase
+      .from('event')
+      .select('id, name, location, starts_at, ends_at')
+      .eq('org_id', orgId)
+      .is('deleted_at', null)
+      .order('starts_at', { ascending: false });
+
+    if (error) throw error;
+    return toCamel(data ?? []);
+  } catch (err) {
+    console.error('loadEvents error:', err);
+    return [];
+  }
+}
+
+export async function createEvent({ orgId, name, location, startsAt, endsAt, createdById }) {
+  const { data, error } = await supabase
+    .from('event')
+    .insert({ org_id: orgId, name, location: location ?? null, starts_at: startsAt ?? null, ends_at: endsAt ?? null, created_by_id: createdById })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
+
+// ─── Team / members ───────────────────────────────────────────────────────────
+
+export async function getOrgMembers({ orgId }) {
+  const { data, error } = await supabase
+    .from('organization_members')
+    .select('id, role, joined_at, user:user!user_id(id, uid, display_name, email)')
+    .eq('org_id', orgId);
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
+export async function getOrgInvites({ orgId }) {
+  const { data, error } = await supabase
+    .from('invite')
+    .select('id, email, role, token, created_at, expires_at, accepted_at')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
+export async function createInvite({ orgId, email, role, invitedById, expiresAt }) {
+  const { data, error } = await supabase
+    .from('invite')
+    .insert({ org_id: orgId, email, role, invited_by_id: invitedById, expires_at: expiresAt })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
+
+export async function regenerateInvite({ inviteId, invitedById }) {
+  const { data: old, error: fetchErr } = await supabase
+    .from('invite')
+    .select('org_id, email, role')
+    .eq('id', inviteId)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  const { error: delErr } = await supabase.from('invite').delete().eq('id', inviteId);
+  if (delErr) throw delErr;
+
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('invite')
+    .insert({ org_id: old.org_id, email: old.email, role: old.role, invited_by_id: invitedById, expires_at: expiresAt })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
+
+export async function acceptInvite(inviteId) {
+  const { error } = await supabase
+    .from('invite')
+    .update({ accepted_at: new Date().toISOString() })
+    .eq('id', inviteId);
+  if (error) throw error;
+}
+
+export async function findPendingInviteByEmail(email) {
+  const { data } = await supabase
+    .from('invite')
+    .select('id, org_id, role')
+    .eq('email', email.toLowerCase())
+    .is('accepted_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .limit(1);
+  return toCamel(data?.[0] ?? null);
+}
+
+export async function hasPendingOrgInvite({ orgId, email }) {
+  const { data } = await supabase
+    .from('invite')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('email', email.toLowerCase())
+    .is('accepted_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
+export async function isEmailAlreadyOrgMember({ orgId, email }) {
+  const { data: u } = await supabase
+    .from('user')
+    .select('id')
+    .eq('email', email.toLowerCase())
+    .maybeSingle();
+  if (!u) return false;
+
+  const { data: m } = await supabase
+    .from('organization_members')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('user_id', u.id)
+    .maybeSingle();
+  return !!m;
+}
+
+export async function addOrgMember({ orgId, userId, role }) {
+  const { error } = await supabase
+    .from('organization_members')
+    .insert({ org_id: orgId, user_id: userId, role });
+  if (error) throw error;
+}
+
+// ─── Fund entries ─────────────────────────────────────────────────────────────
+
+export async function loadFunds(orgId) {
+  const { data, error } = await supabase
+    .from('fund_entry')
+    .select('id, amount_myr, note, created_at, created_by:user!created_by_id(display_name)')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
+export async function createFundEntry({ orgId, amountMyr, note, createdById }) {
+  const { data, error } = await supabase
+    .from('fund_entry')
+    .insert({ org_id: orgId, amount_myr: amountMyr, note: note ?? null, created_by_id: createdById })
+    .select('id, amount_myr, note, created_at')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
+
+// ─── Admin ────────────────────────────────────────────────────────────────────
+
+export async function getAllOrganizations() {
+  const { data, error } = await supabase
+    .from('organization')
+    .select('id, name, slug, created_at, deleted_at')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
+export async function getAllUsers() {
+  const { data, error } = await supabase
+    .from('user')
+    .select('id, uid, display_name, email, created_at, organization_members(role, org:organization!org_id(id, name))')
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
+export async function createOrganization({ name, slug }) {
+  const { data, error } = await supabase
+    .from('organization')
+    .insert({ name, slug })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
