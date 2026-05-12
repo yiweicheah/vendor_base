@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import {
   Center,
   Paper,
@@ -9,6 +9,7 @@ import {
   PasswordInput,
   Button,
   Alert,
+  Anchor,
 } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { signIn } from '../lib/auth';
@@ -77,6 +78,9 @@ export default function SignIn() {
                 required
                 autoComplete="current-password"
               />
+              <Anchor component={Link} to="/reset-password" size="xs" c="dimmed" ta="right">
+                Forgot password?
+              </Anchor>
               <Button
                 type="submit"
                 fullWidth

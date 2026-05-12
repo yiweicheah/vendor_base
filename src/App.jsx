@@ -13,6 +13,8 @@ import Shell from './components/Layout/AppShell';
 import SignIn from './pages/SignIn';
 import AcceptInvite from './pages/AcceptInvite';
 import NoAccess from './pages/NoAccess';
+import ResetPassword from './pages/ResetPassword';
+import UpdatePassword from './pages/UpdatePassword';
 const CartPage       = lazy(() => import('./pages/Cart'));
 const HistoryPage    = lazy(() => import('./pages/History'));
 const DashboardPage  = lazy(() => import('./pages/Dashboard'));
@@ -151,9 +153,11 @@ export default function App() {
   return (
     <Suspense fallback={fallback}>
     <Routes>
-      <Route path="/sign-in"       element={<SignIn />} />
-      <Route path="/accept-invite" element={<AcceptInvite />} />
-      <Route path="/no-access"     element={<NoAccess />} />
+      <Route path="/sign-in"        element={<SignIn />} />
+      <Route path="/accept-invite"  element={<AcceptInvite />} />
+      <Route path="/no-access"      element={<NoAccess />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/update-password" element={<UpdatePassword />} />
       <Route
         path="/admin/*"
         element={
