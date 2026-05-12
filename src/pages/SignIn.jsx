@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import {
   Center,
   Paper,
   Stack,
-  Title,
   Text,
   TextInput,
   PasswordInput,
@@ -13,13 +12,17 @@ import {
 } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { signIn } from '../lib/auth';
+import useAuthStore from '../store/authStore';
+import logo from '../assets/logo.png';
 
 export default function SignIn() {
-  const navigate   = useNavigate();
+  const user       = useAuthStore((s) => s.user);
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState(null);
   const [loading,  setLoading]  = useState(false);
+
+  if (user) return <Navigate to="/" replace />;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -27,7 +30,6 @@ export default function SignIn() {
     setLoading(true);
     try {
       await signIn(email, password);
-      navigate('/');
     } catch (err) {
       setError(getAuthErrorMessage(err.code));
     } finally {
@@ -40,10 +42,8 @@ export default function SignIn() {
       <Paper withBorder p="xl" w={360} radius="md">
         <Stack gap="lg">
 
-          <Stack gap={4}>
-            <Title order={2} size="h3" style={{ letterSpacing: '0.08em' }}>
-              VENDOR BASE
-            </Title>
+          <Stack gap={8} align="center">
+            <img src={logo} alt="Vendor Base" style={{ height: 48, objectFit: 'contain' }} />
             <Text size="xs" c="dimmed">
               Sign in to your account
             </Text>

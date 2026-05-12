@@ -8,6 +8,7 @@ import {
   Box,
   Menu,
 } from '@mantine/core';
+import logo from '../../assets/logo.png';
 import {
   IconShoppingCart,
   IconHistory,
@@ -119,13 +120,7 @@ export default function Shell({ view, setView, onSwitchOrg, children }) {
         }}
       >
         <Group h="100%" px="md" justify="space-between">
-          <Text
-            fw={600}
-            size="sm"
-            style={{ letterSpacing: '0.12em', color: 'var(--mantine-color-violet-4)' }}
-          >
-            VENDOR BASE
-          </Text>
+          <img src={logo} alt="Vendor Base" style={{ height: 28, objectFit: 'contain' }} />
           <OrgSwitcher onSwitchOrg={onSwitchOrg} />
         </Group>
       </AppShell.Header>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Center, Loader } from '@mantine/core';
 import { supabase } from './lib/supabase';
@@ -13,12 +13,12 @@ import Shell from './components/Layout/AppShell';
 import SignIn from './pages/SignIn';
 import AcceptInvite from './pages/AcceptInvite';
 import NoAccess from './pages/NoAccess';
-import CartPage from './pages/Cart';
-import HistoryPage from './pages/History';
-import DashboardPage from './pages/Dashboard';
-import TeamPage from './pages/Team';
-import AdminDashboard from './pages/Admin/AdminDashboard';
-import StockPage from './pages/Stock';
+const CartPage       = lazy(() => import('./pages/Cart'));
+const HistoryPage    = lazy(() => import('./pages/History'));
+const DashboardPage  = lazy(() => import('./pages/Dashboard'));
+const TeamPage       = lazy(() => import('./pages/Team'));
+const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
+const StockPage      = lazy(() => import('./pages/Stock'));
 
 function MainApp({ onSwitchOrg }) {
   const [view, setView] = useState('cart');
@@ -146,7 +146,10 @@ export default function App() {
     );
   }
 
+  const fallback = <Center h="100dvh"><Loader color="violet" size="md" /></Center>;
+
   return (
+    <Suspense fallback={fallback}>
     <Routes>
       <Route path="/sign-in"       element={<SignIn />} />
       <Route path="/accept-invite" element={<AcceptInvite />} />
@@ -168,5 +171,6 @@ export default function App() {
         }
       />
     </Routes>
+    </Suspense>
   );
 }
