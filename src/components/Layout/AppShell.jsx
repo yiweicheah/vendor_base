@@ -122,7 +122,7 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, children
         }}
       >
         <Group h="100%" px="md" justify="space-between">
-          <img src={logo} alt="Vendor Base" style={{ height: 28, objectFit: 'contain' }} />
+          <img src={logo} alt="TCG Vendor Base" style={{ height: 28, objectFit: 'contain' }} />
           <Group gap="xs">
             <OrgSwitcher onSwitchOrg={onSwitchOrg} />
             <ActionIcon variant="subtle" color="gray" onClick={onOpenUser}>

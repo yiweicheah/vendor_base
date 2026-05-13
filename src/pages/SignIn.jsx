@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, Link } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import {
   Center,
   Paper,
@@ -9,7 +9,6 @@ import {
   PasswordInput,
   Button,
   Alert,
-  Anchor,
 } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { signIn } from '../lib/auth';
@@ -44,7 +43,7 @@ export default function SignIn() {
         <Stack gap="lg">
 
           <Stack gap={8} align="center">
-            <img src={logo} alt="Vendor Base" style={{ height: 48, objectFit: 'contain' }} />
+            <img src={logo} alt="TCG Vendor Base" style={{ height: 48, objectFit: 'contain' }} />
             <Text size="xs" c="dimmed">
               Sign in to your account
             </Text>
@@ -78,10 +77,7 @@ export default function SignIn() {
                 required
                 autoComplete="current-password"
               />
-              <Anchor component={Link} to="/reset-password" size="xs" c="dimmed" ta="right">
-                Forgot password?
-              </Anchor>
-              <Button
+<Button
                 type="submit"
                 fullWidth
                 loading={loading}

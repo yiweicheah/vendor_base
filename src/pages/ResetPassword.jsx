@@ -40,7 +40,7 @@ export default function ResetPassword() {
         <Stack gap="lg">
 
           <Stack gap={8} align="center">
-            <img src={logo} alt="Vendor Base" style={{ height: 48, objectFit: 'contain' }} />
+            <img src={logo} alt="TCG Vendor Base" style={{ height: 48, objectFit: 'contain' }} />
             <Text size="xs" c="dimmed">
               Reset your password
             </Text>
