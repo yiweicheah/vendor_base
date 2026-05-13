@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import {
   Modal, Stack, Text, Button, Group, FileButton,
   Progress, ScrollArea, Image, Box, Badge, Alert,
-  Divider, Anchor,
+  Divider, Anchor, SegmentedControl,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconUpload, IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
@@ -23,6 +23,27 @@ function normaliseNumber(num) {
   if (!num) return '';
   const [lid, st] = num.split('/');
   return st ? `${parseInt(lid, 10)}/${st}` : `${parseInt(lid, 10)}`;
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) throw new Error('CSV must have a header row and at least one data row.');
+
+  const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+  return lines.slice(1).map((line) => {
+    // Split respecting quoted fields
+    const cols = [];
+    let cur = '', inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQuote = !inQuote; }
+      else if (ch === ',' && !inQuote) { cols.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    cols.push(cur.trim());
+
+    return Object.fromEntries(headers.map((h, i) => [h, (cols[i] ?? '').replace(/^"|"$/g, '')]));
+  });
 }
 
 function findBestMatch(results, discriminator) {
@@ -68,6 +89,7 @@ export default function ImportModal({ opened, onClose }) {
   const user          = useAuthStore((s) => s.user);
 
   const [step,       setStep]       = useState('upload');   // 'upload' | 'processing' | 'review'
+  const [fileType,   setFileType]   = useState('json');     // 'json' | 'csv'
   const [parseError, setParseError] = useState(null);
   const [progress,   setProgress]   = useState({ current: 0, total: 0, label: '' });
   const [matched,    setMatched]    = useState([]);
@@ -79,6 +101,7 @@ export default function ImportModal({ opened, onClose }) {
     if (step === 'processing') return; // block close mid-processing
     cancelledRef.current = true;
     setStep('upload');
+    setFileType('json');
     setParseError(null);
     setProgress({ current: 0, total: 0, label: '' });
     setMatched([]);
@@ -94,14 +117,23 @@ export default function ImportModal({ opened, onClose }) {
     setParseError(null);
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        setParseError('File must be a non-empty JSON array.');
-        return;
+      let parsed;
+      if (fileType === 'csv') {
+        parsed = parseCSV(text);
+        if (parsed.length === 0) {
+          setParseError('CSV has no data rows.');
+          return;
+        }
+      } else {
+        parsed = JSON.parse(text);
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          setParseError('File must be a non-empty JSON array.');
+          return;
+        }
       }
       processItems(parsed);
-    } catch {
-      setParseError('Could not parse the file. Make sure it is valid JSON.');
+    } catch (err) {
+      setParseError(err.message || `Could not parse the file. Make sure it is valid ${fileType.toUpperCase()}.`);
     }
   }
 
@@ -250,7 +282,7 @@ export default function ImportModal({ opened, onClose }) {
     <Modal
       opened={opened}
       onClose={handleClose}
-      title="Import stock from JSON"
+      title="Import stock"
       size="md"
       closeOnClickOutside={step !== 'processing'}
       closeOnEscape={step !== 'processing'}
@@ -258,13 +290,34 @@ export default function ImportModal({ opened, onClose }) {
       {/* ── Step 1: Upload ─────────────────────────────────────────────────── */}
       {step === 'upload' && (
         <Stack gap="md">
-          <Text size="sm" c="dimmed">
-            Upload a JSON array where each object has{' '}
-            <Text component="span" size="sm" c="violet.4" ff="monospace">product_name</Text>,{' '}
-            <Text component="span" size="sm" c="violet.4" ff="monospace">discriminator</Text>,{' '}
-            <Text component="span" size="sm" c="violet.4" ff="monospace">quantity</Text>, and{' '}
-            <Text component="span" size="sm" c="violet.4" ff="monospace">paid_per_unit</Text>.
-          </Text>
+          <SegmentedControl
+            value={fileType}
+            onChange={(v) => { setFileType(v); setParseError(null); }}
+            data={[
+              { label: 'JSON', value: 'json' },
+              { label: 'CSV',  value: 'csv'  },
+            ]}
+            fullWidth
+            size="xs"
+          />
+
+          {fileType === 'json' ? (
+            <Text size="sm" c="dimmed">
+              Upload a JSON array where each object has{' '}
+              <Text component="span" size="sm" c="violet.4" ff="monospace">product_name</Text>,{' '}
+              <Text component="span" size="sm" c="violet.4" ff="monospace">discriminator</Text>,{' '}
+              <Text component="span" size="sm" c="violet.4" ff="monospace">quantity</Text>, and{' '}
+              <Text component="span" size="sm" c="violet.4" ff="monospace">paid_per_unit</Text>.
+            </Text>
+          ) : (
+            <Text size="sm" c="dimmed">
+              Upload a CSV with columns{' '}
+              <Text component="span" size="sm" c="violet.4" ff="monospace">product_name</Text>,{' '}
+              <Text component="span" size="sm" c="violet.4" ff="monospace">discriminator</Text>,{' '}
+              <Text component="span" size="sm" c="violet.4" ff="monospace">quantity</Text>, and{' '}
+              <Text component="span" size="sm" c="violet.4" ff="monospace">paid_per_unit</Text> as the header row.
+            </Text>
+          )}
 
           {parseError && (
             <Alert icon={<IconAlertCircle size={16} />} color="red" variant="light">
@@ -272,18 +325,23 @@ export default function ImportModal({ opened, onClose }) {
             </Alert>
           )}
 
-          <FileButton onChange={handleFile} accept=".json,application/json">
-            {(props) => (
-              <Button
-                {...props}
-                variant="light"
-                leftSection={<IconUpload size={14} />}
-                fullWidth
-              >
-                Select JSON file
-              </Button>
-            )}
-          </FileButton>
+          {fileType === 'json' ? (
+            <FileButton onChange={handleFile} accept=".json,application/json">
+              {(props) => (
+                <Button {...props} variant="light" leftSection={<IconUpload size={14} />} fullWidth>
+                  Select JSON file
+                </Button>
+              )}
+            </FileButton>
+          ) : (
+            <FileButton onChange={handleFile} accept=".csv,text/csv">
+              {(props) => (
+                <Button {...props} variant="light" leftSection={<IconUpload size={14} />} fullWidth>
+                  Select CSV file
+                </Button>
+              )}
+            </FileButton>
+          )}
         </Stack>
       )}
 

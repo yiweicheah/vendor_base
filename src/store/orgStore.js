@@ -30,6 +30,28 @@ const useOrgStore = create((set) => ({
       ),
     })),
 
+  updateTransactionLine: (txId, lineId, patch) =>
+    set((s) => ({
+      transactions: s.transactions.map((t) =>
+        t.id !== txId ? t : {
+          ...t,
+          transactionLines: t.transactionLines.map((l) =>
+            l.id === lineId ? { ...l, ...patch } : l
+          ),
+        }
+      ),
+    })),
+
+  removeTransactionLine: (txId, lineId) =>
+    set((s) => ({
+      transactions: s.transactions.map((t) =>
+        t.id !== txId ? t : {
+          ...t,
+          transactionLines: t.transactionLines.filter((l) => l.id !== lineId),
+        }
+      ),
+    })),
+
   clearOrgData: () => set({ transactions: [], events: [], funds: [], activeEventId: null }),
 
   clearOrg: () => set({

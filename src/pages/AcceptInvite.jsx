@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Center, Paper, Stack, Title, Text,
   TextInput, PasswordInput, Button, Alert, Loader,
@@ -23,7 +22,6 @@ import { resolveUser, findPendingInviteByEmail, addOrgMember, acceptInvite } fro
  * land on /no-access until an admin adds them.
  */
 export default function AcceptInvite() {
-  const navigate  = useNavigate();
   const [status,  setStatus]  = useState('loading'); // loading | naming | linking | done | error
   const [session, setSession] = useState(null);
   const [name,     setName]     = useState('');
@@ -78,7 +76,7 @@ export default function AcceptInvite() {
       // Whether or not an invite was found, redirect.
       // AuthGuard will send them to /no-access if they're still not in an org.
       setStatus('done');
-      setTimeout(() => navigate('/'), 1200);
+      setTimeout(() => { window.location.replace('/'); }, 1200);
     } catch (err) {
       setError(err.message);
       setStatus('error');

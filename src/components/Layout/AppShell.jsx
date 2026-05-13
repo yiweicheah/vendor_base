@@ -7,6 +7,7 @@ import {
   Stack,
   Box,
   Menu,
+  ActionIcon,
 } from '@mantine/core';
 import logo from '../../assets/logo.png';
 import {
@@ -17,6 +18,7 @@ import {
   IconUsers,
   IconChevronDown,
   IconCheck,
+  IconUser,
 } from '@tabler/icons-react';
 import { getRates, getLastFetched } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
@@ -92,7 +94,7 @@ function OrgSwitcher({ onSwitchOrg }) {
   );
 }
 
-export default function Shell({ view, setView, onSwitchOrg, children }) {
+export default function Shell({ view, setView, onSwitchOrg, onOpenUser, children }) {
   const [, forceRender] = useState(0);
 
   // Re-render once after mount to pick up fetched exchange rates
@@ -121,7 +123,12 @@ export default function Shell({ view, setView, onSwitchOrg, children }) {
       >
         <Group h="100%" px="md" justify="space-between">
           <img src={logo} alt="Vendor Base" style={{ height: 28, objectFit: 'contain' }} />
-          <OrgSwitcher onSwitchOrg={onSwitchOrg} />
+          <Group gap="xs">
+            <OrgSwitcher onSwitchOrg={onSwitchOrg} />
+            <ActionIcon variant="subtle" color="gray" onClick={onOpenUser}>
+              <IconUser size={18} />
+            </ActionIcon>
+          </Group>
         </Group>
       </AppShell.Header>
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Paper, Group, Stack, Text, Badge, ActionIcon,
-  Divider, Box, Image, Collapse, Textarea, Button,
+  Divider, Box, Image, Collapse, Textarea, Button, TextInput,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -9,7 +9,10 @@ import {
   IconChevronDown, IconChevronUp,
   IconTrash, IconPencil, IconCheck, IconX,
 } from '@tabler/icons-react';
-import { deleteTransaction, updateTransactionNotes } from '../../lib/db';
+import {
+  deleteTransaction, updateTransactionNotes,
+  updateTransactionLine, deleteTransactionLine,
+} from '../../lib/db';
 import useAuthStore from '../../store/authStore';
 import useOrgStore from '../../store/orgStore';
 
@@ -44,14 +47,18 @@ function lineTotal(lines) {
 
 // ─── Line row ─────────────────────────────────────────────────────────────────
 
-function LineRow({ line }) {
+function LineRow({ line, editing, lineEdits, setLineEdits, onDelete, deletingLine }) {
   const isCard   = line.type === 'card';
   const isSealed = line.type === 'sealed';
+  const isCash   = line.type === 'cash';
   const label    = isCard ? line.cardName : isSealed ? line.sealedName : 'Cash';
   const sub      = isCard
     ? [line.cardSetName, line.cardNumber, line.cardLang].filter(Boolean).join(' · ')
     : null;
-  const total = (line.unitPriceMyr || 0) * line.qty;
+
+  const rawPrice  = lineEdits?.[line.id] ?? String(line.unitPriceMyr ?? 0);
+  const unitPrice = parseFloat(rawPrice) || 0;
+  const total     = unitPrice * line.qty;
 
   return (
     <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
@@ -66,10 +73,35 @@ function LineRow({ line }) {
           {sub && <Text size="xs" c="dimmed" truncate>{sub}</Text>}
         </Stack>
       </Group>
-      <Stack gap={1} align="flex-end" style={{ flexShrink: 0 }}>
-        <Text size="sm" fw={500}>RM {total.toFixed(2)}</Text>
-        <Text size="xs" c="dimmed">×{line.qty}</Text>
-      </Stack>
+
+      {editing ? (
+        <Group gap={4} align="center" style={{ flexShrink: 0 }}>
+          <TextInput
+            size="xs"
+            value={rawPrice}
+            onChange={(e) =>
+              setLineEdits((prev) => ({ ...prev, [line.id]: e.currentTarget.value }))
+            }
+            leftSection={<Text size="xs" c="dimmed">RM</Text>}
+            leftSectionWidth={32}
+            w={100}
+            styles={{ input: { textAlign: 'right' } }}
+          />
+          <Text size="xs" c="dimmed">×{line.qty}</Text>
+          <ActionIcon
+            size="xs" variant="subtle" color="red"
+            loading={deletingLine === line.id}
+            onClick={() => onDelete(line.id)}
+          >
+            <IconTrash size={11} />
+          </ActionIcon>
+        </Group>
+      ) : (
+        <Stack gap={1} align="flex-end" style={{ flexShrink: 0 }}>
+          <Text size="sm" fw={500}>RM {total.toFixed(2)}</Text>
+          <Text size="xs" c="dimmed">×{line.qty}</Text>
+        </Stack>
+      )}
     </Group>
   );
 }
@@ -77,15 +109,22 @@ function LineRow({ line }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function TransactionCard({ tx }) {
-  const user   = useAuthStore((s) => s.user);
-  const role   = useOrgStore((s) => s.role);
-  const { removeTransaction, updateTransactionNotes: patchNotes } = useOrgStore();
+  const user = useAuthStore((s) => s.user);
+  const role = useOrgStore((s) => s.role);
+  const {
+    removeTransaction,
+    updateTransactionNotes: patchNotes,
+    updateTransactionLine: patchLine,
+    removeTransactionLine,
+  } = useOrgStore();
 
-  const [expanded,  setExpanded]  = useState(false);
-  const [editing,   setEditing]   = useState(false);
-  const [notes,     setNotes]     = useState(tx.notes ?? '');
-  const [savingN,   setSavingN]   = useState(false);
-  const [deletingD, setDeletingD] = useState(false);
+  const [expanded,     setExpanded]     = useState(false);
+  const [editing,      setEditing]      = useState(false);
+  const [notes,        setNotes]        = useState(tx.notes ?? '');
+  const [lineEdits,    setLineEdits]    = useState({});
+  const [savingN,      setSavingN]      = useState(false);
+  const [deletingD,    setDeletingD]    = useState(false);
+  const [deletingLine, setDeletingLine] = useState(null);
 
   const canEdit = role === 'owner' || role === 'admin';
 
@@ -108,7 +147,7 @@ export default function TransactionCard({ tx }) {
   const displayTotal = inTotal > 0 ? inTotal : outTotal;
   const creator      = tx.createdBy?.displayName;
 
-  // ─── Delete ────────────────────────────────────────────────────────────────
+  // ─── Delete transaction ────────────────────────────────────────────────────
 
   function handleDelete() {
     modals.openConfirmModal({
@@ -132,15 +171,51 @@ export default function TransactionCard({ tx }) {
     });
   }
 
-  // ─── Save notes ────────────────────────────────────────────────────────────
+  // ─── Delete line ───────────────────────────────────────────────────────────
 
-  async function handleSaveNotes() {
+  function handleDeleteLine(lineId) {
+    modals.openConfirmModal({
+      title:       'Remove line',
+      children:    <Text size="sm">Remove this item from the transaction?</Text>,
+      labels:      { confirm: 'Remove', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm:   async () => {
+        setDeletingLine(lineId);
+        try {
+          await deleteTransactionLine(lineId);
+          removeTransactionLine(tx.id, lineId);
+          notifications.show({ message: 'Line removed.', color: 'orange', autoClose: 2000 });
+        } catch (err) {
+          notifications.show({ title: 'Failed', message: err.message, color: 'red' });
+        } finally {
+          setDeletingLine(null);
+        }
+      },
+    });
+  }
+
+  // ─── Save (notes + price edits) ────────────────────────────────────────────
+
+  async function handleSave() {
     setSavingN(true);
     try {
-      await updateTransactionNotes({ txId: tx.id, notes: notes || null });
+      const ops = [updateTransactionNotes({ txId: tx.id, notes: notes || null })];
+
+      for (const [lineId, rawVal] of Object.entries(lineEdits)) {
+        const parsed = parseFloat(rawVal);
+        if (!isNaN(parsed)) {
+          ops.push(
+            updateTransactionLine({ lineId, unitPriceMyr: parsed })
+              .then(() => patchLine(tx.id, lineId, { unitPriceMyr: parsed }))
+          );
+        }
+      }
+
+      await Promise.all(ops);
       patchNotes(tx.id, notes || null);
+      setLineEdits({});
       setEditing(false);
-      notifications.show({ message: 'Notes updated.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Transaction updated.', color: 'green', autoClose: 2000 });
     } catch (err) {
       notifications.show({ title: 'Save failed', message: err.message, color: 'red' });
     } finally {
@@ -150,6 +225,7 @@ export default function TransactionCard({ tx }) {
 
   function handleCancelEdit() {
     setNotes(tx.notes ?? '');
+    setLineEdits({});
     setEditing(false);
   }
 
@@ -214,9 +290,21 @@ export default function TransactionCard({ tx }) {
           <Stack gap="xs" mb={outLines.length > 0 ? 'sm' : 0}>
             <Group gap="xs">
               <Text size="xs" fw={700} tt="uppercase" c="violet.4" style={{ letterSpacing: '0.08em' }}>In</Text>
-              <Text size="xs" c="dimmed">RM {inTotal.toFixed(2)}</Text>
+              <Text size="xs" c="dimmed">RM {lineTotal(inLines).toFixed(2)}</Text>
             </Group>
-            <Stack gap="xs">{inLines.map((l) => <LineRow key={l.id} line={l} />)}</Stack>
+            <Stack gap="xs">
+              {inLines.map((l) => (
+                <LineRow
+                  key={l.id}
+                  line={l}
+                  editing={editing}
+                  lineEdits={lineEdits}
+                  setLineEdits={setLineEdits}
+                  onDelete={handleDeleteLine}
+                  deletingLine={deletingLine}
+                />
+              ))}
+            </Stack>
           </Stack>
         )}
 
@@ -224,9 +312,21 @@ export default function TransactionCard({ tx }) {
           <Stack gap="xs">
             <Group gap="xs">
               <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>Out</Text>
-              <Text size="xs" c="dimmed">RM {outTotal.toFixed(2)}</Text>
+              <Text size="xs" c="dimmed">RM {lineTotal(outLines).toFixed(2)}</Text>
             </Group>
-            <Stack gap="xs">{outLines.map((l) => <LineRow key={l.id} line={l} />)}</Stack>
+            <Stack gap="xs">
+              {outLines.map((l) => (
+                <LineRow
+                  key={l.id}
+                  line={l}
+                  editing={editing}
+                  lineEdits={lineEdits}
+                  setLineEdits={setLineEdits}
+                  onDelete={handleDeleteLine}
+                  deletingLine={deletingLine}
+                />
+              ))}
+            </Stack>
           </Stack>
         )}
 
@@ -252,7 +352,7 @@ export default function TransactionCard({ tx }) {
                 autoFocus
               />
               <Group gap="xs">
-                <Button size="xs" loading={savingN} leftSection={<IconCheck size={12} />} onClick={handleSaveNotes}>
+                <Button size="xs" loading={savingN} leftSection={<IconCheck size={12} />} onClick={handleSave}>
                   Save
                 </Button>
                 <Button size="xs" variant="subtle" color="gray" leftSection={<IconX size={12} />} onClick={handleCancelEdit}>

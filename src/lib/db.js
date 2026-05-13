@@ -79,6 +79,14 @@ export async function resolveUser(supabaseUser) {
   }
 }
 
+export async function updateUserDisplayName({ dbId, displayName }) {
+  const { error } = await supabase
+    .from('user')
+    .update({ display_name: displayName })
+    .eq('id', dbId);
+  if (error) throw error;
+}
+
 // ─── Org membership ───────────────────────────────────────────────────────────
 
 /**
@@ -161,6 +169,22 @@ export async function updateTransactionNotes({ txId, notes }) {
     .from('transaction')
     .update({ notes: notes ?? null })
     .eq('id', txId);
+  if (error) throw error;
+}
+
+export async function updateTransactionLine({ lineId, unitPriceMyr }) {
+  const { error } = await supabase
+    .from('transaction_lines')
+    .update({ unit_price_myr: unitPriceMyr })
+    .eq('id', lineId);
+  if (error) throw error;
+}
+
+export async function deleteTransactionLine(lineId) {
+  const { error } = await supabase
+    .from('transaction_lines')
+    .delete()
+    .eq('id', lineId);
   if (error) throw error;
 }
 

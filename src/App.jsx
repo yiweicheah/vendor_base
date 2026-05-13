@@ -21,16 +21,18 @@ const DashboardPage  = lazy(() => import('./pages/Dashboard'));
 const TeamPage       = lazy(() => import('./pages/Team'));
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 const StockPage      = lazy(() => import('./pages/Stock'));
+const UserPage       = lazy(() => import('./pages/User'));
 
 function MainApp({ onSwitchOrg }) {
   const [view, setView] = useState('cart');
   return (
-    <Shell view={view} setView={setView} onSwitchOrg={onSwitchOrg}>
+    <Shell view={view} setView={setView} onSwitchOrg={onSwitchOrg} onOpenUser={() => setView('user')}>
       {view === 'cart'      && <CartPage />}
       {view === 'history'   && <HistoryPage />}
       {view === 'dashboard' && <DashboardPage />}
       {view === 'stock'     && <StockPage />}
       {view === 'team'      && <TeamPage />}
+      {view === 'user'      && <UserPage onBack={() => setView('cart')} />}
     </Shell>
   );
 }
