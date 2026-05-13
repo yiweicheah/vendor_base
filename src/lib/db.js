@@ -43,7 +43,22 @@ export async function resolveUser(supabaseUser) {
       .eq('uid', supabaseUser.id)
       .maybeSingle();
 
-    if (existing) return toCamel(existing);
+    if (existing) {
+      const authName =
+        supabaseUser.user_metadata?.display_name ||
+        supabaseUser.user_metadata?.full_name ||
+        '';
+      if (!existing.display_name && authName) {
+        const { data: updated } = await supabase
+          .from('user')
+          .update({ display_name: authName })
+          .eq('id', existing.id)
+          .select('id, uid, display_name, email')
+          .single();
+        if (updated) return toCamel(updated);
+      }
+      return toCamel(existing);
+    }
 
     const displayName =
       supabaseUser.user_metadata?.display_name ||
