@@ -2,10 +2,18 @@ import { Center, Stack, Title, Text, Button, ThemeIcon } from '@mantine/core';
 import { Helmet } from 'react-helmet-async';
 import { IconLock } from '@tabler/icons-react';
 import { signOut } from '../lib/auth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
+import useAuthStore from '../store/authStore';
+import useOrgStore from '../store/orgStore';
 
 export default function NoAccess() {
   const navigate = useNavigate();
+  const { user, loading } = useAuthStore();
+  const { org } = useOrgStore();
+
+  // Redirect away once auth resolves and the user has an org
+  if (!loading && user && org) return <Navigate to="/" replace />;
+  if (!loading && !user)       return <Navigate to="/sign-in" replace />;
 
   async function handleSignOut() {
     await signOut();
