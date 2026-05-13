@@ -5,6 +5,7 @@ import {
 } from '@mantine/core';
 import { IconSearch, IconPackage } from '@tabler/icons-react';
 import { computeStockItems } from '../../lib/analytics';
+import { normalizeStr } from '../../lib/tokenizer';
 import useCartStore from '../../store/cartStore';
 import useOrgStore from '../../store/orgStore';
 
@@ -65,12 +66,12 @@ export default function StockPickerModal({ opened, onClose, onSearchFallback }) 
   );
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeStr(query.trim().toLowerCase());
     if (!q) return stockItems;
     return stockItems.filter((item) =>
-      item.name.toLowerCase().includes(q) ||
-      (item.setName ?? '').toLowerCase().includes(q) ||
-      (item.number  ?? '').toLowerCase().includes(q)
+      normalizeStr(item.name.toLowerCase()).includes(q) ||
+      normalizeStr((item.setName ?? '').toLowerCase()).includes(q) ||
+      normalizeStr((item.number  ?? '').toLowerCase()).includes(q)
     );
   }, [stockItems, query]);
 

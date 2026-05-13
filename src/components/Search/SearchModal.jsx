@@ -6,7 +6,7 @@ import {
 import { useMediaQuery } from '@mantine/hooks';
 import { IconSearch } from '@tabler/icons-react';
 import { searchCards, getCardDetail, getCardImage, extractPrice } from '../../lib/pokewallet';
-import { tokenize, buildQuery, isQueryTooShort, buildAlternateNumberQuery } from '../../lib/tokenizer';
+import { tokenize, buildQuery, isQueryTooShort, buildAlternateNumberQuery, normalizeStr } from '../../lib/tokenizer';
 import useCartStore from '../../store/cartStore';
 import CardGrid from './CardGrid';
 
@@ -26,12 +26,13 @@ function LoadingSkeleton() {
 
 function scoreByName(card, nameTokens) {
   if (!nameTokens.length) return 0;
-  const name = (card.card_info?.name ?? '').toLowerCase();
-  const joined = nameTokens.join(' ');
+  const name = normalizeStr((card.card_info?.name ?? '').toLowerCase());
+  const normTokens = nameTokens.map((t) => normalizeStr(t.toLowerCase()));
+  const joined = normTokens.join(' ');
   if (name === joined) return 100;
   if (name.startsWith(joined)) return 80;
-  const matchCount = nameTokens.filter((t) => name.includes(t)).length;
-  if (matchCount === nameTokens.length) return name.startsWith(nameTokens[0]) ? 70 : 60;
+  const matchCount = normTokens.filter((t) => name.includes(t)).length;
+  if (matchCount === normTokens.length) return name.startsWith(normTokens[0]) ? 70 : 60;
   return matchCount * 10;
 }
 
