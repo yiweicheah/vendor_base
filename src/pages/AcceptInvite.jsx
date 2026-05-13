@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import {
   Center, Paper, Stack, Title, Text,
   TextInput, PasswordInput, Button, Alert, Loader,
@@ -98,7 +99,13 @@ export default function AcceptInvite() {
   }
 
   return (
-    <Center h="100dvh" bg="dark.9">
+    <>
+      <Helmet>
+        <title>Accept Invite | TCG Vendor Base</title>
+        <meta name="description" content="Accept your invite to join a TCG Vendor Base organisation." />
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
+      <Center h="100dvh" bg="dark.9">
       <Paper withBorder p="xl" w={360} radius="md">
         <Stack gap="lg">
           <Stack gap={4}>
@@ -154,5 +161,6 @@ export default function AcceptInvite() {
         </Stack>
       </Paper>
     </Center>
+    </>
   );
 }

@@ -23,10 +23,10 @@ const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 const StockPage      = lazy(() => import('./pages/Stock'));
 const UserPage       = lazy(() => import('./pages/User'));
 
-function MainApp({ onSwitchOrg }) {
+function MainApp({ onSwitchOrg, switchingOrg }) {
   const [view, setView] = useState('cart');
   return (
-    <Shell view={view} setView={setView} onSwitchOrg={onSwitchOrg} onOpenUser={() => setView('user')}>
+    <Shell view={view} setView={setView} onSwitchOrg={onSwitchOrg} onOpenUser={() => setView('user')} switchingOrg={switchingOrg}>
       {view === 'cart'      && <CartPage />}
       {view === 'history'   && <HistoryPage />}
       {view === 'dashboard' && <DashboardPage />}
@@ -38,11 +38,12 @@ function MainApp({ onSwitchOrg }) {
 }
 
 export default function App() {
+  const [switchingOrg, setSwitchingOrg] = useState(false);
   const { setUser, clearAuth, loading: authLoading } = useAuthStore();
   const {
     org, memberships,
     setMembership, setMemberships, clearOrgData,
-    setTransactions, setEvents, setFunds,
+    setTransactions, setEvents, setFunds, setActiveEventId,
     clearOrg,
   } = useOrgStore();
 
@@ -55,6 +56,8 @@ export default function App() {
         if (!session) {
           clearAuth();
           clearOrg();
+          localStorage.removeItem('selectedOrgId');
+          localStorage.removeItem('selectedEventId');
           return;
         }
 
@@ -75,11 +78,15 @@ export default function App() {
         }
 
         const allMemberships = dbUser ? await loadAllMemberships(dbUser.id) : [];
-        const firstMembership = allMemberships[0] ?? null;
+        const savedOrgId = localStorage.getItem('selectedOrgId');
+        const initialMembership =
+          (savedOrgId && allMemberships.find((m) => m.org.id === savedOrgId)) ||
+          allMemberships[0] ||
+          null;
 
         setMemberships(allMemberships);
-        if (firstMembership) {
-          setMembership(firstMembership.org, firstMembership.role);
+        if (initialMembership) {
+          setMembership(initialMembership.org, initialMembership.role);
         }
 
         setUser({
@@ -90,15 +97,19 @@ export default function App() {
           isSuperuser: false,
         });
 
-        if (firstMembership) {
+        if (initialMembership) {
           Promise.all([
-            loadTransactions(firstMembership.org.id),
-            loadEvents(firstMembership.org.id),
-            loadFunds(firstMembership.org.id),
+            loadTransactions(initialMembership.org.id),
+            loadEvents(initialMembership.org.id),
+            loadFunds(initialMembership.org.id),
           ]).then(([txs, events, funds]) => {
             setTransactions(txs);
             setEvents(events);
             setFunds(funds);
+            const savedEventId = localStorage.getItem('selectedEventId');
+            if (savedEventId && events.some((e) => e.id === savedEventId)) {
+              setActiveEventId(savedEventId);
+            }
           });
         }
       } catch (err) {
@@ -130,16 +141,23 @@ export default function App() {
   async function handleSwitchOrg(orgId) {
     const next = memberships.find((m) => m.org.id === orgId);
     if (!next || next.org.id === org?.id) return;
+    localStorage.setItem('selectedOrgId', orgId);
+    localStorage.removeItem('selectedEventId');
     setMembership(next.org, next.role);
     clearOrgData();
-    const [txs, events, funds] = await Promise.all([
-      loadTransactions(orgId),
-      loadEvents(orgId),
-      loadFunds(orgId),
-    ]);
-    setTransactions(txs);
-    setEvents(events);
-    setFunds(funds);
+    setSwitchingOrg(true);
+    try {
+      const [txs, events, funds] = await Promise.all([
+        loadTransactions(orgId),
+        loadEvents(orgId),
+        loadFunds(orgId),
+      ]);
+      setTransactions(txs);
+      setEvents(events);
+      setFunds(funds);
+    } finally {
+      setSwitchingOrg(false);
+    }
   }
 
   if (authLoading) {
@@ -172,7 +190,7 @@ export default function App() {
         path="/*"
         element={
           <AuthGuard>
-            <MainApp onSwitchOrg={handleSwitchOrg} />
+            <MainApp onSwitchOrg={handleSwitchOrg} switchingOrg={switchingOrg} />
           </AuthGuard>
         }
       />

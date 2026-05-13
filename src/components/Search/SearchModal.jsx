@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Modal, Stack, TextInput,
-  Center, Text, Button, SimpleGrid, Box,
+  Center, Text, Button, SimpleGrid, Box, Skeleton,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconSearch } from '@tabler/icons-react';
 import { searchCards, getCardDetail, getCardImage, extractPrice } from '../../lib/pokewallet';
-import { tokenize, buildQuery, isQueryTooShort } from '../../lib/tokenizer';
+import { tokenize, buildQuery, isQueryTooShort, buildAlternateNumberQuery } from '../../lib/tokenizer';
 import useCartStore from '../../store/cartStore';
 import CardGrid from './CardGrid';
 
@@ -15,12 +15,24 @@ function LoadingSkeleton() {
     <SimpleGrid cols={2} spacing={8} verticalSpacing={12}>
       {Array.from({ length: 6 }).map((_, i) => (
         <Box key={i}>
-          <Box style={{ aspectRatio: '245/337', background: 'var(--mantine-color-dark-6)', borderRadius: 4 }} />
-          <Box p={6} style={{ minHeight: 44 }} />
+          <Skeleton style={{ aspectRatio: '245/337' }} radius="xs" />
+          <Skeleton height={13} mt={6} radius="xs" width="75%" />
+          <Skeleton height={11} mt={4} radius="xs" width="45%" />
         </Box>
       ))}
     </SimpleGrid>
   );
+}
+
+function scoreByName(card, nameTokens) {
+  if (!nameTokens.length) return 0;
+  const name = (card.card_info?.name ?? '').toLowerCase();
+  const joined = nameTokens.join(' ');
+  if (name === joined) return 100;
+  if (name.startsWith(joined)) return 80;
+  const matchCount = nameTokens.filter((t) => name.includes(t)).length;
+  if (matchCount === nameTokens.length) return name.startsWith(nameTokens[0]) ? 70 : 60;
+  return matchCount * 10;
 }
 
 function filterBySetTotal(results, setTotal) {
@@ -79,13 +91,40 @@ export default function SearchModal({ opened, onClose, side }) {
     setHasMore(false);
 
     try {
-      const data = await searchCards({ query: q, page: 1, signal: controller.signal });
-      if (abortRef.current !== controller) return;
+      const altQ = nameTokens.length === 0
+        ? buildAlternateNumberQuery({ localId, setTotalRaw })
+        : null;
 
-      const filtered = filterBySetTotal(data.results ?? [], setTotal);
-      setResults(filtered);
+      let rawResults;
+      let primaryPagination;
+
+      if (altQ) {
+        const [primary, alternate] = await Promise.all([
+          searchCards({ query: q,    page: 1, signal: controller.signal }),
+          searchCards({ query: altQ, page: 1, signal: controller.signal }),
+        ]);
+        if (abortRef.current !== controller) return;
+        const seen = new Set();
+        rawResults = [...(primary.results ?? []), ...(alternate.results ?? [])].filter((c) => {
+          if (seen.has(c.id)) return false;
+          seen.add(c.id);
+          return true;
+        });
+        primaryPagination = primary.pagination;
+      } else {
+        const data = await searchCards({ query: q, page: 1, signal: controller.signal });
+        if (abortRef.current !== controller) return;
+        rawResults = data.results ?? [];
+        primaryPagination = data.pagination;
+      }
+
+      const filtered = filterBySetTotal(rawResults, setTotal);
+      const sorted = nameTokens.length
+        ? [...filtered].sort((a, b) => scoreByName(b, nameTokens) - scoreByName(a, nameTokens))
+        : filtered;
+      setResults(sorted);
       setPage(1);
-      setHasMore((data.pagination?.page ?? 1) < (data.pagination?.total_pages ?? 1));
+      setHasMore((primaryPagination?.page ?? 1) < (primaryPagination?.total_pages ?? 1));
     } catch (err) {
       if (err.name === 'AbortError') return;
       setError(err.code === 'RATE_LIMIT' ? 'rate_limit' : 'network');
@@ -120,7 +159,10 @@ export default function SearchModal({ opened, onClose, side }) {
       if (lastQuery !== query) return;
 
       const filtered = filterBySetTotal(data.results ?? [], setTotal);
-      setResults((prev) => [...prev, ...filtered]);
+      const sorted = nameTokens.length
+        ? [...filtered].sort((a, b) => scoreByName(b, nameTokens) - scoreByName(a, nameTokens))
+        : filtered;
+      setResults((prev) => [...prev, ...sorted]);
       setPage(nextPage);
       setHasMore(nextPage < (data.pagination?.total_pages ?? nextPage));
     } catch (err) {
@@ -157,7 +199,7 @@ export default function SearchModal({ opened, onClose, side }) {
   // ─── Render ───────────────────────────────────────────────────────────────
   // idle = nothing searched yet; noResults = searched and got nothing back
   const idle      = !loading && results.length === 0 && !error && lastQuery === '';
-  const noResults = !loading && results.length === 0 && !error && lastQuery !== '';
+  const noResults = !loading && results.length === 0 && !error && lastQuery !== '' && lastQuery === query;
 
   return (
     <Modal

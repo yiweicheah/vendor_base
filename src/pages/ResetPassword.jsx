@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import {
   Center,
   Paper,
@@ -35,7 +36,17 @@ export default function ResetPassword() {
   }
 
   return (
-    <Center h="100dvh" bg="dark.9">
+    <>
+      <Helmet>
+        <title>Reset Password | TCG Vendor Base</title>
+        <meta name="description" content="Reset your TCG Vendor Base password. Enter your email and we'll send you a reset link." />
+        <link rel="canonical" href="https://tcgvendorbase.com/reset-password" />
+        <meta name="robots" content="noindex, follow" />
+        <meta property="og:title" content="Reset Password | TCG Vendor Base" />
+        <meta property="og:description" content="Reset your TCG Vendor Base account password." />
+        <meta property="og:url" content="https://tcgvendorbase.com/reset-password" />
+      </Helmet>
+      <Center h="100dvh" bg="dark.9">
       <Paper withBorder p="xl" w={360} radius="md">
         <Stack gap="lg">
 
@@ -94,5 +105,6 @@ export default function ResetPassword() {
         </Stack>
       </Paper>
     </Center>
+    </>
   );
 }

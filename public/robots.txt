@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /sign-in
+
+Disallow: /admin/
+Disallow: /accept-invite
+Disallow: /update-password
+Disallow: /no-access
+Disallow: /reset-password
+
+Sitemap: https://tcgvendorbase.com/sitemap.xml

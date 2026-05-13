@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { MantineProvider, createTheme } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { ModalsProvider } from '@mantine/modals';
+import { HelmetProvider } from 'react-helmet-async';
 import App from './App';
 
 const theme = createTheme({
@@ -18,12 +19,14 @@ const theme = createTheme({
 });
 
 createRoot(document.getElementById('root')).render(
-  <BrowserRouter>
-    <MantineProvider theme={theme} defaultColorScheme="dark">
-      <ModalsProvider>
-        <Notifications position="top-right" />
-        <App />
-      </ModalsProvider>
-    </MantineProvider>
-  </BrowserRouter>
+  <HelmetProvider>
+    <BrowserRouter>
+      <MantineProvider theme={theme} defaultColorScheme="dark">
+        <ModalsProvider>
+          <Notifications position="top-right" />
+          <App />
+        </ModalsProvider>
+      </MantineProvider>
+    </BrowserRouter>
+  </HelmetProvider>
 );

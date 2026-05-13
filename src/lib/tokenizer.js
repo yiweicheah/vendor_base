@@ -54,3 +54,34 @@ export function buildQuery({ nameTokens, localId, setTotalRaw }) {
 export function isQueryTooShort(raw) {
   return raw.replace(/\s/g, '').length < 2;
 }
+
+/**
+ * Returns the opposite zero-padding form of a number string, or null if no
+ * alternate exists. Only handles all-digit strings (skips tg06, sv1, etc.).
+ * Pads/strips to 3 digits: "082" → "82", "82" → "082", "100" → null.
+ */
+function altNumber(s) {
+  const n = parseInt(s, 10);
+  const stripped = n.toString();
+  const padded = stripped.padStart(3, '0');
+  if (s === stripped) return padded !== s ? padded : null;
+  return stripped;
+}
+
+/**
+ * Returns an alternate query string for number-only searches, covering both
+ * zero-padded and unpadded card number formats (e.g. "082/090" ↔ "82/90").
+ * Returns null if no alternate applies (alphanumeric numbers, no leading zeros,
+ * or padding wouldn't change the string).
+ */
+export function buildAlternateNumberQuery({ localId, setTotalRaw }) {
+  if (!localId || !/^\d+$/.test(localId)) return null;
+  const altLocalId = altNumber(localId);
+  if (!altLocalId) return null;
+  if (setTotalRaw) {
+    if (!/^\d+$/.test(setTotalRaw)) return null;
+    const altSet = altNumber(setTotalRaw);
+    return altSet ? `${altLocalId}/${altSet}` : null;
+  }
+  return altLocalId;
+}

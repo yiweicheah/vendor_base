@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Box, Text, Overlay, Center, Loader } from '@mantine/core';
-import { getTcgplayerImageUrl } from '../../lib/pokewallet';
+import { getTcgplayerImageUrl, extractPrice } from '../../lib/pokewallet';
 
 export default function CardTile({ card, onSelect }) {
   const [selecting, setSelecting] = useState(false);
@@ -8,6 +8,8 @@ export default function CardTile({ card, onSelect }) {
   const imageUrl = card.tcgplayer?.url
     ? getTcgplayerImageUrl(card.tcgplayer.url)
     : null;
+
+  const priceInfo = extractPrice(card);
 
   async function handleTap() {
     if (selecting) return;
@@ -67,6 +69,12 @@ export default function CardTile({ card, onSelect }) {
             .filter(Boolean)
             .join(' · ')}
         </Text>
+        {priceInfo && (
+          <Text size="11px" c="teal.4" fw={500}>
+            RM {priceInfo.myr.toFixed(2)}
+            <Text span size="10px" c="dimmed" fw={400}> · {priceInfo.source}</Text>
+          </Text>
+        )}
       </Box>
     </Box>
   );

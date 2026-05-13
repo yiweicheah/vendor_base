@@ -61,7 +61,10 @@ function CreateEventForm({ onCreated }) {
         endsAt:   toTs(endDate),
       };
       addEvent(newEvent);
-      if (newId) setActiveEventId(newId);
+      if (newId) {
+        localStorage.setItem('selectedEventId', newId);
+        setActiveEventId(newId);
+      }
       onCreated();
       notifications.show({ message: 'Event created.', color: 'green', autoClose: 2000 });
     } catch (err) {
@@ -122,6 +125,8 @@ function EventPickerModal({ opened, onClose }) {
   const [showCreate, setShowCreate] = useState(false);
 
   function select(id) {
+    if (id) localStorage.setItem('selectedEventId', id);
+    else localStorage.removeItem('selectedEventId');
     setActiveEventId(id);
     onClose();
   }
@@ -228,7 +233,7 @@ export default function EventSelector() {
             variant="subtle"
             color="gray"
             size="xs"
-            onClick={() => setActiveEventId(null)}
+            onClick={() => { localStorage.removeItem('selectedEventId'); setActiveEventId(null); }}
           >
             <IconX size={11} />
           </ActionIcon>

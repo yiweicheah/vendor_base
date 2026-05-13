@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import {
   Center,
   Paper,
@@ -38,7 +39,17 @@ export default function SignIn() {
   }
 
   return (
-    <Center h="100dvh" bg="dark.9">
+    <>
+      <Helmet>
+        <title>Sign In | TCG Vendor Base</title>
+        <meta name="description" content="Sign in to TCG Vendor Base to manage your Trading Card Game vendor operations." />
+        <link rel="canonical" href="https://tcgvendorbase.com/sign-in" />
+        <meta name="robots" content="index, follow" />
+        <meta property="og:title" content="Sign In | TCG Vendor Base" />
+        <meta property="og:description" content="Sign in to manage your TCG vendor operations." />
+        <meta property="og:url" content="https://tcgvendorbase.com/sign-in" />
+      </Helmet>
+      <Center h="100dvh" bg="dark.9">
       <Paper withBorder p="xl" w={360} radius="md">
         <Stack gap="lg">
 
@@ -95,6 +106,7 @@ export default function SignIn() {
         </Stack>
       </Paper>
     </Center>
+    </>
   );
 }
 

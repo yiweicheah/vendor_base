@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import {
   Center,
   Paper,
@@ -43,7 +44,13 @@ export default function UpdatePassword() {
   }
 
   return (
-    <Center h="100dvh" bg="dark.9">
+    <>
+      <Helmet>
+        <title>Set New Password | TCG Vendor Base</title>
+        <meta name="description" content="Set a new password for your TCG Vendor Base account." />
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
+      <Center h="100dvh" bg="dark.9">
       <Paper withBorder p="xl" w={360} radius="md">
         <Stack gap="lg">
 
@@ -91,5 +98,6 @@ export default function UpdatePassword() {
         </Stack>
       </Paper>
     </Center>
+    </>
   );
 }

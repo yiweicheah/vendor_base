@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import {
   AppShell,
   Group,
@@ -8,6 +9,7 @@ import {
   Box,
   Menu,
   ActionIcon,
+  LoadingOverlay,
 } from '@mantine/core';
 import logo from '../../assets/logo.png';
 import {
@@ -22,6 +24,15 @@ import {
 } from '@tabler/icons-react';
 import { getRates, getLastFetched } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
+
+const VIEW_TITLES = {
+  cart:      'Cart',
+  history:   'History',
+  dashboard: 'Dashboard',
+  stock:     'Stock',
+  team:      'Team',
+  user:      'Account',
+};
 
 const NAV_ITEMS = [
   { id: 'cart',      label: 'Cart',      Icon: IconShoppingCart },
@@ -94,7 +105,7 @@ function OrgSwitcher({ onSwitchOrg }) {
   );
 }
 
-export default function Shell({ view, setView, onSwitchOrg, onOpenUser, children }) {
+export default function Shell({ view, setView, onSwitchOrg, onOpenUser, switchingOrg, children }) {
   const [, forceRender] = useState(0);
 
   // Re-render once after mount to pick up fetched exchange rates
@@ -110,6 +121,11 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, children
     : `USD ${rates.USD_TO_MYR.toFixed(2)} · EUR ${rates.EUR_TO_MYR.toFixed(2)}`;
 
   return (
+    <>
+      <Helmet>
+        <title>{VIEW_TITLES[view] ?? 'App'} | TCG Vendor Base</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
     <AppShell
       header={{ height: 48 }}
       footer={{ height: 80 }}
@@ -138,8 +154,10 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, children
           flexDirection: 'column',
           height:        'calc(100dvh - 48px - 80px)',
           overflow:      'hidden',
+          position:      'relative',
         }}
       >
+        <LoadingOverlay visible={switchingOrg} zIndex={10} overlayProps={{ blur: 2 }} loaderProps={{ color: 'violet' }} />
         <Box style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {children}
         </Box>
@@ -168,5 +186,6 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, children
         </Stack>
       </AppShell.Footer>
     </AppShell>
+    </>
   );
 }
