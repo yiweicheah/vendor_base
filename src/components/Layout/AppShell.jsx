@@ -21,7 +21,9 @@ import {
   IconChevronDown,
   IconCheck,
   IconUser,
+  IconDownload,
 } from '@tabler/icons-react';
+import { usePwaInstall } from '../../hooks/usePwaInstall';
 import { getRates, getLastFetched } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
 
@@ -107,6 +109,7 @@ function OrgSwitcher({ onSwitchOrg }) {
 
 export default function Shell({ view, setView, onSwitchOrg, onOpenUser, switchingOrg, children }) {
   const [, forceRender] = useState(0);
+  const { canInstall, promptInstall } = usePwaInstall();
 
   // Re-render once after mount to pick up fetched exchange rates
   useEffect(() => {
@@ -141,6 +144,11 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, switchin
           <img src={logo} alt="TCG Vendor Base" style={{ height: 28, objectFit: 'contain' }} />
           <Group gap="xs">
             <OrgSwitcher onSwitchOrg={onSwitchOrg} />
+            {canInstall && (
+              <ActionIcon variant="subtle" color="gray" onClick={promptInstall} title="Install app">
+                <IconDownload size={18} />
+              </ActionIcon>
+            )}
             <ActionIcon variant="subtle" color="gray" onClick={onOpenUser}>
               <IconUser size={18} />
             </ActionIcon>

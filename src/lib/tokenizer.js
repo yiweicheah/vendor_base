@@ -10,6 +10,10 @@
  * setTotal    (integer) — used for client-side filtering; parseInt strips leading zeros intentionally.
  * setTotalRaw (string)  — used for building the API query string; preserves leading zeros exactly.
  */
+export function normalizeStr(s) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 export function tokenize(query) {
   const tokens = query.trim().split(/\s+/).filter(Boolean);
   const nameTokens = [];

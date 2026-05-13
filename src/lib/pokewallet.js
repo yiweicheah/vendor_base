@@ -1,4 +1,5 @@
 import { getRates } from './exchangeRates';
+import { normalizeStr } from './tokenizer';
 
 const BASE = 'https://api.pokewallet.io';
 const KEY = import.meta.env.DEV
@@ -9,7 +10,7 @@ const headers = { 'X-API-Key': KEY };
 // ─── Search ───────────────────────────────────────────────────────────────────
 
 export async function searchCards({ query, page = 1, signal }) {
-  const url = `${BASE}/search?q=${encodeURIComponent(query)}&page=${page}&limit=20`;
+  const url = `${BASE}/search?q=${encodeURIComponent(normalizeStr(query))}&page=${page}&limit=20`;
   const res = await fetch(url, { headers, signal });
 
   if (res.status === 429) {
