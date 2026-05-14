@@ -7,7 +7,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { IconUpload, IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokewallet';
-import { tokenize, buildQuery } from '../../lib/tokenizer';
+import { tokenize, buildQuery, buildAlternateNumberQuery } from '../../lib/tokenizer';
 import { saveTransaction, saveTransactionLine, loadTransactions } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
@@ -159,9 +159,30 @@ export default function ImportModal({ opened, onClose }) {
       setProgress({ current: i + 1, total: items.length, label });
 
       try {
-        const query = buildQuery(tokenize(`${name} ${disc}`));
-        const data  = await searchCards({ query, page: 1 });
-        const card  = findBestMatch(data.results ?? [], disc);
+        const parsed = tokenize(`${name} ${disc}`);
+        const query  = buildQuery(parsed);
+        const altQ   = parsed.nameTokens.length === 0
+          ? buildAlternateNumberQuery({ localId: parsed.localId, setTotalRaw: parsed.setTotalRaw })
+          : null;
+
+        let results;
+        if (altQ) {
+          const [primary, alternate] = await Promise.all([
+            searchCards({ query,      page: 1 }),
+            searchCards({ query: altQ, page: 1 }),
+          ]);
+          const seen = new Set();
+          results = [...(primary.results ?? []), ...(alternate.results ?? [])].filter((c) => {
+            if (seen.has(c.id)) return false;
+            seen.add(c.id);
+            return true;
+          });
+        } else {
+          const data = await searchCards({ query, page: 1 });
+          results = data.results ?? [];
+        }
+
+        const card  = findBestMatch(results, disc);
 
         if (!card) {
           unmatchedAcc.push(item);

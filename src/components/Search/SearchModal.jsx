@@ -46,7 +46,7 @@ function filterBySetTotal(results, setTotal) {
   });
 }
 
-export default function SearchModal({ opened, onClose, side }) {
+export default function SearchModal({ opened, onClose, side, onCardSelect }) {
   const isMobile = useMediaQuery('(max-width: 48em)');
   const { addLine } = useCartStore();
 
@@ -181,21 +181,33 @@ export default function SearchModal({ opened, onClose, side }) {
     const priceInfo = extractPrice(resolved);
     const { url: imageUrl } = await getCardImage(resolved);
 
-    addLine(side, {
-      type:           'card',
-      qty:            1,
-      unitPrice:      priceInfo?.myr ?? 0,
-      cardExternalId: resolved.id,
-      cardName:       resolved.card_info?.name ?? '',
-      cardNumber:     resolved.card_info?.card_number ?? '',
-      setName:        resolved.card_info?.set_name ?? '',
-      imageUrl:       imageUrl ?? null,
-      marketPrice:    priceInfo?.myr ?? null,
-      priceSource:    priceInfo?.source ?? null,
-    });
+    if (onCardSelect) {
+      onCardSelect({
+        cardExternalId: resolved.id,
+        cardName:       resolved.card_info?.name ?? '',
+        cardNumber:     resolved.card_info?.card_number ?? '',
+        cardSetName:    resolved.card_info?.set_name ?? '',
+        cardImageUrl:   imageUrl ?? null,
+        marketPriceMyr: priceInfo?.myr ?? null,
+        priceSource:    priceInfo?.source ?? null,
+      });
+    } else {
+      addLine(side, {
+        type:           'card',
+        qty:            1,
+        unitPrice:      priceInfo?.myr ?? 0,
+        cardExternalId: resolved.id,
+        cardName:       resolved.card_info?.name ?? '',
+        cardNumber:     resolved.card_info?.card_number ?? '',
+        setName:        resolved.card_info?.set_name ?? '',
+        imageUrl:       imageUrl ?? null,
+        marketPrice:    priceInfo?.myr ?? null,
+        priceSource:    priceInfo?.source ?? null,
+      });
+    }
 
     onClose();
-  }, [side, addLine, onClose]);
+  }, [side, addLine, onClose, onCardSelect]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   // idle = nothing searched yet; noResults = searched and got nothing back

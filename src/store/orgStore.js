@@ -52,6 +52,16 @@ const useOrgStore = create((set) => ({
       ),
     })),
 
+  addTransactionLine: (txId, line) =>
+    set((s) => ({
+      transactions: s.transactions.map((t) =>
+        t.id !== txId ? t : {
+          ...t,
+          transactionLines: [...t.transactionLines, line],
+        }
+      ),
+    })),
+
   clearOrgData: () => set({ transactions: [], events: [], funds: [], activeEventId: null }),
 
   clearOrg: () => set({

@@ -1,20 +1,22 @@
 import { useState } from 'react';
 import {
   Paper, Group, Stack, Text, Badge, ActionIcon,
-  Divider, Box, Image, Collapse, Textarea, Button, TextInput,
+  Divider, Box, Image, Collapse, Textarea, Button, TextInput, SimpleGrid,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import {
   IconChevronDown, IconChevronUp,
-  IconTrash, IconPencil, IconCheck, IconX,
+  IconTrash, IconPencil, IconCheck, IconX, IconPlus,
 } from '@tabler/icons-react';
 import {
   deleteTransaction, updateTransactionNotes,
-  updateTransactionLine, deleteTransactionLine,
+  updateTransactionLine, deleteTransactionLine, saveTransactionLine,
 } from '../../lib/db';
+import { getRates } from '../../lib/exchangeRates';
 import useAuthStore from '../../store/authStore';
 import useOrgStore from '../../store/orgStore';
+import SearchModal from '../Search/SearchModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,7 +110,7 @@ function LineRow({ line, editing, lineEdits, setLineEdits, onDelete, deletingLin
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function TransactionCard({ tx }) {
+export default function TransactionCard({ tx, view = 'list' }) {
   const user = useAuthStore((s) => s.user);
   const role = useOrgStore((s) => s.role);
   const {
@@ -116,6 +118,7 @@ export default function TransactionCard({ tx }) {
     updateTransactionNotes: patchNotes,
     updateTransactionLine: patchLine,
     removeTransactionLine,
+    addTransactionLine,
   } = useOrgStore();
 
   const [expanded,     setExpanded]     = useState(false);
@@ -125,6 +128,8 @@ export default function TransactionCard({ tx }) {
   const [savingN,      setSavingN]      = useState(false);
   const [deletingD,    setDeletingD]    = useState(false);
   const [deletingLine, setDeletingLine] = useState(null);
+  const [addCardOpen,  setAddCardOpen]  = useState(false);
+  const [addCardSide,  setAddCardSide]  = useState('in');
 
   const canEdit = role === 'owner' || role === 'admin';
 
@@ -229,6 +234,159 @@ export default function TransactionCard({ tx }) {
     setEditing(false);
   }
 
+  // ─── Add card line ─────────────────────────────────────────────────────────
+
+  async function handleCardSelect(cardData) {
+    setAddCardOpen(false);
+    const { USD_TO_MYR, EUR_TO_MYR } = getRates();
+    try {
+      const newId = await saveTransactionLine({
+        transactionId:        tx.id,
+        side:                 addCardSide,
+        type:                 'card',
+        qty:                  1,
+        unitPriceMyr:         cardData.marketPriceMyr ?? 0,
+        cardExternalId:       cardData.cardExternalId,
+        cardName:             cardData.cardName,
+        cardNumber:           cardData.cardNumber,
+        cardSetName:          cardData.cardSetName,
+        cardLang:             null,
+        cardImageUrl:         cardData.cardImageUrl,
+        marketPriceMyr:       cardData.marketPriceMyr,
+        priceSource:          cardData.priceSource,
+        usdToMyrRate:         USD_TO_MYR,
+        eurToMyrRate:         EUR_TO_MYR,
+        sealedProductId:      null,
+        sealedName:           null,
+        sealedReferencePrice: null,
+      });
+      addTransactionLine(tx.id, {
+        id:             newId,
+        side:           addCardSide,
+        type:           'card',
+        qty:            1,
+        unitPriceMyr:   cardData.marketPriceMyr ?? 0,
+        cardExternalId: cardData.cardExternalId,
+        cardName:       cardData.cardName,
+        cardNumber:     cardData.cardNumber,
+        cardSetName:    cardData.cardSetName,
+        cardLang:       null,
+        cardImageUrl:   cardData.cardImageUrl,
+        marketPriceMyr: cardData.marketPriceMyr,
+        priceSource:    cardData.priceSource,
+      });
+      notifications.show({ message: 'Card added.', color: 'teal', autoClose: 2000 });
+    } catch (err) {
+      notifications.show({ title: 'Failed to add card', message: err.message, color: 'red' });
+    }
+  }
+
+  const isGrid = view === 'grid';
+
+  // In/out sections used by both list and grid bodies
+  function renderInOutLines() {
+    return (
+      <>
+        {(inLines.length > 0 || editing) && (
+          <Stack gap="xs" mb={outLines.length > 0 || editing ? 'sm' : 0}>
+            <Group gap="xs">
+              <Text size="xs" fw={700} tt="uppercase" c="violet.4" style={{ letterSpacing: '0.08em' }}>In</Text>
+              <Text size="xs" c="dimmed">RM {lineTotal(inLines).toFixed(2)}</Text>
+            </Group>
+            <Stack gap="xs">
+              {inLines.map((l) => (
+                <LineRow
+                  key={l.id}
+                  line={l}
+                  editing={editing}
+                  lineEdits={lineEdits}
+                  setLineEdits={setLineEdits}
+                  onDelete={handleDeleteLine}
+                  deletingLine={deletingLine}
+                />
+              ))}
+            </Stack>
+            {editing && (
+              <Button
+                size="xs" variant="subtle" color="violet"
+                leftSection={<IconPlus size={12} />}
+                onClick={() => { setAddCardSide('in'); setAddCardOpen(true); }}
+              >
+                Add card
+              </Button>
+            )}
+          </Stack>
+        )}
+
+        {(outLines.length > 0 || editing) && (
+          <Stack gap="xs">
+            <Group gap="xs">
+              <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>Out</Text>
+              <Text size="xs" c="dimmed">RM {lineTotal(outLines).toFixed(2)}</Text>
+            </Group>
+            <Stack gap="xs">
+              {outLines.map((l) => (
+                <LineRow
+                  key={l.id}
+                  line={l}
+                  editing={editing}
+                  lineEdits={lineEdits}
+                  setLineEdits={setLineEdits}
+                  onDelete={handleDeleteLine}
+                  deletingLine={deletingLine}
+                />
+              ))}
+            </Stack>
+            {editing && (
+              <Button
+                size="xs" variant="subtle" color="gray"
+                leftSection={<IconPlus size={12} />}
+                onClick={() => { setAddCardSide('out'); setAddCardOpen(true); }}
+              >
+                Add card
+              </Button>
+            )}
+          </Stack>
+        )}
+      </>
+    );
+  }
+
+  function renderNotes() {
+    if (!editing) {
+      return (tx.notes || notes) ? (
+        <>
+          <Divider my="sm" variant="dashed" />
+          <Text size="xs" c="dimmed" fs="italic">{notes || tx.notes}</Text>
+        </>
+      ) : null;
+    }
+    return (
+      <>
+        <Divider my="sm" variant="dashed" />
+        <Stack gap="xs">
+          <Textarea
+            placeholder="Add a note…"
+            value={notes}
+            onChange={(e) => setNotes(e.currentTarget.value)}
+            size="xs"
+            autosize
+            minRows={2}
+            autoFocus
+          />
+          <Group gap="xs">
+            <Button size="xs" loading={savingN} leftSection={<IconCheck size={12} />} onClick={handleSave}>
+              Save
+            </Button>
+            <Button size="xs" variant="subtle" color="gray" leftSection={<IconX size={12} />} onClick={handleCancelEdit}>
+              Cancel
+            </Button>
+          </Group>
+        </Stack>
+      </>
+    );
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -282,87 +440,133 @@ export default function TransactionCard({ tx }) {
         </Group>
       </Group>
 
-      {/* Expanded body */}
-      <Collapse expanded={expanded}>
-        <Divider my="sm" />
+      {/* Grid mode: collapsible card image grid with inline editing */}
+      {isGrid && (
+        <Collapse expanded={expanded}>
+          <Divider my="sm" />
+          {(() => {
+            const sections = [
+              { label: 'In',  side: 'in',  color: 'violet.4', cardLines: inLines.filter((l)  => l.type === 'card') },
+              { label: 'Out', side: 'out', color: 'dimmed',   cardLines: outLines.filter((l) => l.type === 'card') },
+            ].filter((s) => editing || s.cardLines.length > 0);
 
-        {inLines.length > 0 && (
-          <Stack gap="xs" mb={outLines.length > 0 ? 'sm' : 0}>
-            <Group gap="xs">
-              <Text size="xs" fw={700} tt="uppercase" c="violet.4" style={{ letterSpacing: '0.08em' }}>In</Text>
-              <Text size="xs" c="dimmed">RM {lineTotal(inLines).toFixed(2)}</Text>
-            </Group>
-            <Stack gap="xs">
-              {inLines.map((l) => (
-                <LineRow
-                  key={l.id}
-                  line={l}
-                  editing={editing}
-                  lineEdits={lineEdits}
-                  setLineEdits={setLineEdits}
-                  onDelete={handleDeleteLine}
-                  deletingLine={deletingLine}
-                />
-              ))}
-            </Stack>
-          </Stack>
-        )}
+            if (sections.length === 0) {
+              return <Text size="xs" c="dimmed">No cards</Text>;
+            }
 
-        {outLines.length > 0 && (
-          <Stack gap="xs">
-            <Group gap="xs">
-              <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>Out</Text>
-              <Text size="xs" c="dimmed">RM {lineTotal(outLines).toFixed(2)}</Text>
-            </Group>
-            <Stack gap="xs">
-              {outLines.map((l) => (
-                <LineRow
-                  key={l.id}
-                  line={l}
-                  editing={editing}
-                  lineEdits={lineEdits}
-                  setLineEdits={setLineEdits}
-                  onDelete={handleDeleteLine}
-                  deletingLine={deletingLine}
-                />
-              ))}
-            </Stack>
-          </Stack>
-        )}
+            return (
+              <Stack gap="sm">
+                {sections.map(({ label, side, color, cardLines }) => (
+                  <Stack key={label} gap={6}>
+                    <Group gap="xs">
+                      <Text size="xs" fw={700} tt="uppercase" c={color} style={{ letterSpacing: '0.08em' }}>
+                        {label}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        RM {lineTotal(side === 'in' ? inLines : outLines).toFixed(2)}
+                      </Text>
+                    </Group>
 
-        {/* Notes — view or edit */}
-        {!editing ? (
-          (tx.notes || notes) && (
-            <>
-              <Divider my="sm" variant="dashed" />
-              <Text size="xs" c="dimmed" fs="italic">{notes || tx.notes}</Text>
-            </>
-          )
-        ) : (
-          <>
-            <Divider my="sm" variant="dashed" />
-            <Stack gap="xs">
-              <Textarea
-                placeholder="Add a note…"
-                value={notes}
-                onChange={(e) => setNotes(e.currentTarget.value)}
-                size="xs"
-                autosize
-                minRows={2}
-                autoFocus
-              />
-              <Group gap="xs">
-                <Button size="xs" loading={savingN} leftSection={<IconCheck size={12} />} onClick={handleSave}>
-                  Save
-                </Button>
-                <Button size="xs" variant="subtle" color="gray" leftSection={<IconX size={12} />} onClick={handleCancelEdit}>
-                  Cancel
-                </Button>
-              </Group>
-            </Stack>
-          </>
-        )}
-      </Collapse>
+                    {cardLines.length > 0 && (
+                      <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing={4}>
+                        {cardLines.map((l) => (
+                          <Stack key={l.id} gap={4}>
+                            <Box style={{ position: 'relative' }}>
+                              {l.cardImageUrl ? (
+                                <Image
+                                  src={l.cardImageUrl}
+                                  fit="contain"
+                                  style={{ aspectRatio: '245/337', width: '100%', borderRadius: '4.4%', overflow: 'hidden' }}
+                                />
+                              ) : (
+                                <Box
+                                  bg="dark.6"
+                                  style={{
+                                    aspectRatio: '245/337',
+                                    borderRadius: '4.4%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <Text size="xs" c="dimmed" ta="center" px={2} lineClamp={2}>
+                                    {l.cardName ?? '—'}
+                                  </Text>
+                                </Box>
+                              )}
+                              {editing && (
+                                <ActionIcon
+                                  style={{ position: 'absolute', top: 2, right: 2 }}
+                                  size="xs" variant="filled" color="red" radius="sm"
+                                  loading={deletingLine === l.id}
+                                  onClick={() => handleDeleteLine(l.id)}
+                                >
+                                  <IconTrash size={10} />
+                                </ActionIcon>
+                              )}
+                            </Box>
+                            <Stack gap={1}>
+                              <Text size="xs" fw={500} lineClamp={2}>{l.cardName ?? '—'}</Text>
+                              {l.cardSetName && (
+                                <Text size="xs" c="dimmed" truncate>{l.cardSetName}</Text>
+                              )}
+                              {editing ? (
+                                <TextInput
+                                  size="xs"
+                                  value={lineEdits[l.id] ?? String(l.unitPriceMyr ?? 0)}
+                                  onChange={(e) =>
+                                    setLineEdits((prev) => ({ ...prev, [l.id]: e.currentTarget.value }))
+                                  }
+                                  leftSection={<Text size="xs" c="dimmed">RM</Text>}
+                                  leftSectionWidth={28}
+                                  styles={{ input: { textAlign: 'right' } }}
+                                />
+                              ) : (
+                                <Text size="xs">RM {(l.unitPriceMyr ?? 0).toFixed(2)}</Text>
+                              )}
+                              {l.marketPriceMyr != null && (
+                                <Text size="xs" c="dimmed">Mkt RM {l.marketPriceMyr.toFixed(2)}</Text>
+                              )}
+                            </Stack>
+                          </Stack>
+                        ))}
+                      </SimpleGrid>
+                    )}
+
+                    {editing && (
+                      <Button
+                        size="xs" variant="subtle"
+                        color={side === 'in' ? 'violet' : 'gray'}
+                        leftSection={<IconPlus size={12} />}
+                        onClick={() => { setAddCardSide(side); setAddCardOpen(true); }}
+                      >
+                        Add card
+                      </Button>
+                    )}
+                  </Stack>
+                ))}
+                {renderNotes()}
+              </Stack>
+            );
+          })()}
+        </Collapse>
+      )}
+
+      {/* List mode: collapsible detail */}
+      {!isGrid && (
+        <Collapse expanded={expanded}>
+          <Divider my="sm" />
+          {renderInOutLines()}
+          {renderNotes()}
+        </Collapse>
+      )}
+
+      <SearchModal
+        opened={addCardOpen}
+        onClose={() => setAddCardOpen(false)}
+        side={addCardSide}
+        onCardSelect={handleCardSelect}
+      />
     </Paper>
   );
 }
