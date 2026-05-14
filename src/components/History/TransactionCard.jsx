@@ -81,9 +81,10 @@ function LineRow({ line, editing, lineEdits, setLineEdits, onDelete, deletingLin
           <TextInput
             size="xs"
             value={rawPrice}
-            onChange={(e) =>
-              setLineEdits((prev) => ({ ...prev, [line.id]: e.currentTarget.value }))
-            }
+            onChange={(e) => {
+              const val = e.currentTarget.value;
+              setLineEdits((prev) => ({ ...prev, [line.id]: val }));
+            }}
             leftSection={<Text size="xs" c="dimmed">RM</Text>}
             leftSectionWidth={32}
             w={100}
@@ -514,9 +515,10 @@ export default function TransactionCard({ tx, view = 'list' }) {
                                 <TextInput
                                   size="xs"
                                   value={lineEdits[l.id] ?? String(l.unitPriceMyr ?? 0)}
-                                  onChange={(e) =>
-                                    setLineEdits((prev) => ({ ...prev, [l.id]: e.currentTarget.value }))
-                                  }
+                                  onChange={(e) => {
+                                    const val = e.currentTarget.value;
+                                    setLineEdits((prev) => ({ ...prev, [l.id]: val }));
+                                  }}
                                   leftSection={<Text size="xs" c="dimmed">RM</Text>}
                                   leftSectionWidth={28}
                                   styles={{ input: { textAlign: 'right' } }}
