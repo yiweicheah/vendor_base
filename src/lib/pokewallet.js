@@ -81,8 +81,9 @@ export function extractPrice(card) {
       );
       if (match) {
         return {
-          myr:    +(match.market_price * USD_TO_MYR).toFixed(2),
-          source: `TCGPlayer ${match.sub_type_name}`,
+          myr:       +(match.market_price * USD_TO_MYR).toFixed(2),
+          source:    `TCGPlayer ${match.sub_type_name}`,
+          updatedAt: match.updated_at ?? null,
         };
       }
     }
@@ -90,8 +91,9 @@ export function extractPrice(card) {
     const any = tcgPrices.find((p) => p.market_price != null);
     if (any) {
       return {
-        myr:    +(any.market_price * USD_TO_MYR).toFixed(2),
-        source: `TCGPlayer ${any.sub_type_name}`,
+        myr:       +(any.market_price * USD_TO_MYR).toFixed(2),
+        source:    `TCGPlayer ${any.sub_type_name}`,
+        updatedAt: any.updated_at ?? null,
       };
     }
   }
@@ -105,8 +107,9 @@ export function extractPrice(card) {
         const eur = match.avg30 ?? match.avg ?? match.trend;
         if (eur != null) {
           return {
-            myr:    +(eur * EUR_TO_MYR).toFixed(2),
-            source: `Cardmarket ${match.variant_type}`,
+            myr:       +(eur * EUR_TO_MYR).toFixed(2),
+            source:    `Cardmarket ${match.variant_type}`,
+            updatedAt: match.updated_at ?? null,
           };
         }
       }

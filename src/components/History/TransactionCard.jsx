@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Paper, Group, Stack, Text, Badge, ActionIcon,
-  Divider, Box, Image, Collapse, Textarea, Button, TextInput, SimpleGrid,
+  Divider, Box, Image, Collapse, Textarea, Button, TextInput, NumberInput, SimpleGrid,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -17,6 +17,7 @@ import { getRates } from '../../lib/exchangeRates';
 import useAuthStore from '../../store/authStore';
 import useOrgStore from '../../store/orgStore';
 import SearchModal from '../Search/SearchModal';
+import CardDetailModal from '../Cards/CardDetailModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,10 +50,9 @@ function lineTotal(lines) {
 
 // ─── Line row ─────────────────────────────────────────────────────────────────
 
-function LineRow({ line, editing, lineEdits, setLineEdits, onDelete, deletingLine }) {
+function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits, onDelete, deletingLine }) {
   const isCard   = line.type === 'card';
   const isSealed = line.type === 'sealed';
-  const isCash   = line.type === 'cash';
   const label    = isCard ? line.cardName : isSealed ? line.sealedName : 'Cash';
   const sub      = isCard
     ? [line.cardSetName, line.cardNumber, line.cardLang].filter(Boolean).join(' · ')
@@ -60,7 +60,8 @@ function LineRow({ line, editing, lineEdits, setLineEdits, onDelete, deletingLin
 
   const rawPrice  = lineEdits?.[line.id] ?? String(line.unitPriceMyr ?? 0);
   const unitPrice = parseFloat(rawPrice) || 0;
-  const total     = unitPrice * line.qty;
+  const qty       = qtyEdits?.[line.id] ?? line.qty;
+  const total     = unitPrice * qty;
 
   return (
     <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
@@ -87,10 +88,24 @@ function LineRow({ line, editing, lineEdits, setLineEdits, onDelete, deletingLin
             }}
             leftSection={<Text size="xs" c="dimmed">RM</Text>}
             leftSectionWidth={32}
-            w={100}
+            w={90}
             styles={{ input: { textAlign: 'right' } }}
           />
-          <Text size="xs" c="dimmed">×{line.qty}</Text>
+          <Text size="xs" c="dimmed">×</Text>
+          <NumberInput
+            size="xs"
+            value={qty}
+            onChange={(val) => {
+              if (typeof val === 'number' && val >= 1) {
+                setQtyEdits((prev) => ({ ...prev, [line.id]: val }));
+              }
+            }}
+            min={1}
+            allowDecimal={false}
+            hideControls
+            w={44}
+            styles={{ input: { textAlign: 'center' } }}
+          />
           <ActionIcon
             size="xs" variant="subtle" color="red"
             loading={deletingLine === line.id}
@@ -126,11 +141,13 @@ export default function TransactionCard({ tx, view = 'list' }) {
   const [editing,      setEditing]      = useState(false);
   const [notes,        setNotes]        = useState(tx.notes ?? '');
   const [lineEdits,    setLineEdits]    = useState({});
+  const [qtyEdits,     setQtyEdits]     = useState({});
   const [savingN,      setSavingN]      = useState(false);
   const [deletingD,    setDeletingD]    = useState(false);
   const [deletingLine, setDeletingLine] = useState(null);
   const [addCardOpen,  setAddCardOpen]  = useState(false);
   const [addCardSide,  setAddCardSide]  = useState('in');
+  const [detailCard,   setDetailCard]   = useState(null); // { id, imageUrl }
 
   const canEdit = role === 'owner' || role === 'admin';
 
@@ -207,12 +224,21 @@ export default function TransactionCard({ tx, view = 'list' }) {
     try {
       const ops = [updateTransactionNotes({ txId: tx.id, notes: notes || null })];
 
-      for (const [lineId, rawVal] of Object.entries(lineEdits)) {
-        const parsed = parseFloat(rawVal);
-        if (!isNaN(parsed)) {
+      const editedLineIds = new Set([...Object.keys(lineEdits), ...Object.keys(qtyEdits)]);
+      for (const lineId of editedLineIds) {
+        const patch = {};
+        if (lineId in lineEdits) {
+          const parsed = parseFloat(lineEdits[lineId]);
+          if (!isNaN(parsed)) patch.unitPriceMyr = parsed;
+        }
+        if (lineId in qtyEdits) {
+          const q = qtyEdits[lineId];
+          if (q >= 1) patch.qty = q;
+        }
+        if (Object.keys(patch).length > 0) {
           ops.push(
-            updateTransactionLine({ lineId, unitPriceMyr: parsed })
-              .then(() => patchLine(tx.id, lineId, { unitPriceMyr: parsed }))
+            updateTransactionLine({ lineId, ...patch })
+              .then(() => patchLine(tx.id, lineId, patch))
           );
         }
       }
@@ -220,6 +246,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
       await Promise.all(ops);
       patchNotes(tx.id, notes || null);
       setLineEdits({});
+      setQtyEdits({});
       setEditing(false);
       notifications.show({ message: 'Transaction updated.', color: 'green', autoClose: 2000 });
     } catch (err) {
@@ -232,6 +259,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
   function handleCancelEdit() {
     setNotes(tx.notes ?? '');
     setLineEdits({});
+    setQtyEdits({});
     setEditing(false);
   }
 
@@ -302,6 +330,8 @@ export default function TransactionCard({ tx, view = 'list' }) {
                   editing={editing}
                   lineEdits={lineEdits}
                   setLineEdits={setLineEdits}
+                  qtyEdits={qtyEdits}
+                  setQtyEdits={setQtyEdits}
                   onDelete={handleDeleteLine}
                   deletingLine={deletingLine}
                 />
@@ -333,6 +363,8 @@ export default function TransactionCard({ tx, view = 'list' }) {
                   editing={editing}
                   lineEdits={lineEdits}
                   setLineEdits={setLineEdits}
+                  qtyEdits={qtyEdits}
+                  setQtyEdits={setQtyEdits}
                   onDelete={handleDeleteLine}
                   deletingLine={deletingLine}
                 />
@@ -472,7 +504,10 @@ export default function TransactionCard({ tx, view = 'list' }) {
                       <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing={4}>
                         {cardLines.map((l) => (
                           <Stack key={l.id} gap={4}>
-                            <Box style={{ position: 'relative' }}>
+                            <Box
+                              style={{ position: 'relative', cursor: l.cardExternalId && !editing ? 'pointer' : 'default' }}
+                              onClick={l.cardExternalId && !editing ? () => setDetailCard({ id: String(l.cardExternalId), imageUrl: l.cardImageUrl ?? null }) : undefined}
+                            >
                               {l.cardImageUrl ? (
                                 <Image
                                   src={l.cardImageUrl}
@@ -512,17 +547,33 @@ export default function TransactionCard({ tx, view = 'list' }) {
                                 <Text size="xs" c="dimmed" truncate>{l.cardSetName}</Text>
                               )}
                               {editing ? (
-                                <TextInput
-                                  size="xs"
-                                  value={lineEdits[l.id] ?? String(l.unitPriceMyr ?? 0)}
-                                  onChange={(e) => {
-                                    const val = e.currentTarget.value;
-                                    setLineEdits((prev) => ({ ...prev, [l.id]: val }));
-                                  }}
-                                  leftSection={<Text size="xs" c="dimmed">RM</Text>}
-                                  leftSectionWidth={28}
-                                  styles={{ input: { textAlign: 'right' } }}
-                                />
+                                <Group gap={4} wrap="nowrap">
+                                  <TextInput
+                                    size="xs"
+                                    value={lineEdits[l.id] ?? String(l.unitPriceMyr ?? 0)}
+                                    onChange={(e) => {
+                                      const val = e.currentTarget.value;
+                                      setLineEdits((prev) => ({ ...prev, [l.id]: val }));
+                                    }}
+                                    leftSection={<Text size="xs" c="dimmed">RM</Text>}
+                                    leftSectionWidth={28}
+                                    styles={{ input: { textAlign: 'right' } }}
+                                  />
+                                  <NumberInput
+                                    size="xs"
+                                    value={qtyEdits[l.id] ?? l.qty}
+                                    onChange={(val) => {
+                                      if (typeof val === 'number' && val >= 1) {
+                                        setQtyEdits((prev) => ({ ...prev, [l.id]: val }));
+                                      }
+                                    }}
+                                    min={1}
+                                    allowDecimal={false}
+                                    hideControls
+                                    w={44}
+                                    styles={{ input: { textAlign: 'center' } }}
+                                  />
+                                </Group>
                               ) : (
                                 <Text size="xs">RM {(l.unitPriceMyr ?? 0).toFixed(2)}</Text>
                               )}
@@ -568,6 +619,11 @@ export default function TransactionCard({ tx, view = 'list' }) {
         onClose={() => setAddCardOpen(false)}
         side={addCardSide}
         onCardSelect={handleCardSelect}
+      />
+      <CardDetailModal
+        cardExternalId={detailCard?.id ?? null}
+        fallbackImageUrl={detailCard?.imageUrl ?? null}
+        onClose={() => setDetailCard(null)}
       />
     </Paper>
   );

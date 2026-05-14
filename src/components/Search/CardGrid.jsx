@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { SimpleGrid, Box, Text } from '@mantine/core';
+import { Box, Text } from '@mantine/core';
 import CardTile from './CardTile';
 
 function SkeletonTile() {
@@ -45,7 +45,7 @@ export default function CardGrid({
 
   return (
     <Box>
-      <SimpleGrid cols={2} spacing={8} verticalSpacing={12}>
+      <Box style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', columnGap: 8, rowGap: 12 }}>
         {results.map((card) => (
           <CardTile key={card.id} card={card} onSelect={onSelect} />
         ))}
@@ -55,7 +55,7 @@ export default function CardGrid({
             <SkeletonTile />
           </>
         )}
-      </SimpleGrid>
+      </Box>
 
       {/* Sentinel div — triggers next page load */}
       {hasMore && (

@@ -1,21 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   Box, ScrollArea, Stack, Group, Text, Badge,
   TextInput, Select, Image, Center, ThemeIcon, Button,
-  ActionIcon, SimpleGrid,
+  ActionIcon, Pagination,
 } from '@mantine/core';
-import { IconSearch, IconPackage, IconUpload, IconLayoutList, IconLayoutGrid } from '@tabler/icons-react';
+import { IconSearch, IconPackage, IconUpload, IconLayoutList, IconLayoutGrid, IconRefresh } from '@tabler/icons-react';
 import { computeStockItems } from '../lib/analytics';
 import { normalizeStr } from '../lib/tokenizer';
+import { refreshStaleCardPrices } from '../lib/priceRefresh';
 import useOrgStore from '../store/orgStore';
 import ImportModal from '../components/Stock/ImportModal';
+import CardDetailModal from '../components/Cards/CardDetailModal';
 
-function GainText({ value }) {
+function GainText({ value, costBasis }) {
   if (!value) return null;
   const color = value > 0 ? 'green.4' : value < 0 ? 'red.4' : 'dimmed';
   const prefix = value > 0 ? '+' : '';
+  const pct = costBasis > 0 ? ` (${prefix}${((value / costBasis) * 100).toFixed(1)}%)` : '';
   return (
-    <Text size="xs" c={color}>{prefix}RM {value.toFixed(2)}</Text>
+    <Text size="xs" c={color}>{prefix}RM {value.toFixed(2)}{pct}</Text>
   );
 }
 
@@ -61,17 +64,20 @@ function StockRow({ item }) {
         {isCard && item.marketValue > 0 && (
           <Text size="xs" c="dimmed">RM {item.marketValue.toFixed(2)}</Text>
         )}
-        {isCard && <GainText value={item.unrealizedGain} />}
+        {isCard && <GainText value={item.unrealizedGain} costBasis={item.costBasis} />}
       </Stack>
     </Group>
   );
 }
 
-function StockGridItem({ item }) {
+function StockGridItem({ item, onCardClick }) {
   const isCard = item.type === 'card';
   return (
     <Stack gap={6}>
-      <Box style={{ width: '100%', position: 'relative' }}>
+      <Box
+        style={{ width: '100%', position: 'relative', cursor: isCard ? 'pointer' : 'default' }}
+        onClick={isCard ? () => onCardClick(item.key, item.imageUrl) : undefined}
+      >
         {isCard && item.imageUrl ? (
           <Image
             src={item.imageUrl}
@@ -103,24 +109,32 @@ function StockGridItem({ item }) {
       </Box>
       <Stack gap={2}>
         <Text size="xs" fw={500} lineClamp={2}>{item.name}</Text>
-        <Text size="xs" c="dimmed">RM {item.avgCost.toFixed(2)}</Text>
-        {isCard && <GainText value={item.unrealizedGain} />}
+        <Text size="xs" c="dimmed">Cost RM {item.avgCost.toFixed(2)}</Text>
+        {isCard && item.avgMarket > 0 && (
+          <Text size="xs" c="dimmed">Mkt RM {item.avgMarket.toFixed(2)}</Text>
+        )}
+        {isCard && <GainText value={item.unrealizedGain} costBasis={item.costBasis} />}
       </Stack>
     </Stack>
   );
 }
 
+const PAGE_SIZE_GRID = 24;
+const PAGE_SIZE_LIST = 40;
+
 const SORT_OPTIONS = [
-  { value: 'name-asc',    label: 'Name (A–Z)' },
-  { value: 'qty-desc',    label: 'Qty (high first)' },
-  { value: 'market-desc', label: 'Market value' },
-  { value: 'gain-desc',   label: 'Unrealized gain' },
+  { value: 'name-asc',       label: 'Name (A–Z)' },
+  { value: 'qty-desc',       label: 'Qty (high first)' },
+  { value: 'unit-desc',      label: 'Unit price' },
+  { value: 'market-desc',    label: 'Total market value' },
+  { value: 'gain-desc',      label: 'Unrealized gain' },
 ];
 
 function applySort(items, sort) {
   const sorted = [...items];
   switch (sort) {
     case 'qty-desc':    return sorted.sort((a, b) => b.qty - a.qty);
+    case 'unit-desc':   return sorted.sort((a, b) => (b.avgMarket ?? 0) - (a.avgMarket ?? 0));
     case 'market-desc': return sorted.sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0));
     case 'gain-desc':   return sorted.sort((a, b) => (b.unrealizedGain ?? 0) - (a.unrealizedGain ?? 0));
     default:            return sorted.sort((a, b) => a.name.localeCompare(b.name));
@@ -130,11 +144,16 @@ function applySort(items, sort) {
 export default function Stock() {
   const transactions = useOrgStore((s) => s.transactions);
   const role         = useOrgStore((s) => s.role);
-  const [query,       setQuery]       = useState('');
-  const [sort,        setSort]        = useState('name-asc');
-  const [eventFilter, setEventFilter] = useState('');
-  const [importOpen,  setImportOpen]  = useState(false);
-  const [view,        setViewRaw]     = useState(() => localStorage.getItem('stock_view') ?? 'list');
+  const [query,          setQuery]          = useState('');
+  const [sort,           setSort]           = useState('name-asc');
+  const [eventFilter,    setEventFilter]    = useState('');
+  const [importOpen,     setImportOpen]     = useState(false);
+  const [detailCard,     setDetailCard]     = useState(null); // { id, imageUrl }
+  const [page,           setPage]           = useState(1);
+  const [view,           setViewRaw]        = useState(() => localStorage.getItem('stock_view') ?? 'list');
+  const [priceOverrides, setPriceOverrides] = useState(new Map());
+  const [refreshing,     setRefreshing]     = useState(false);
+  const [lastRefreshed,  setLastRefreshed]  = useState(null);
 
   function setView(v) {
     setViewRaw(v);
@@ -142,6 +161,51 @@ export default function Stock() {
   }
 
   const canImport = role === 'owner' || role === 'admin';
+
+  const cardIds = useMemo(() => {
+    const ids = new Set();
+    for (const tx of transactions) {
+      for (const line of tx.transactionLines ?? []) {
+        if (line.type === 'card' && line.cardExternalId) ids.add(String(line.cardExternalId));
+      }
+    }
+    return [...ids];
+  }, [transactions]);
+
+  const cardIdsKey = useMemo(() => [...cardIds].sort().join(','), [cardIds]);
+
+  const doRefresh = useCallback(async (force = false) => {
+    if (!cardIds.length) return;
+    setRefreshing(true);
+    try {
+      const map = await refreshStaleCardPrices(cardIds, force);
+      setPriceOverrides(new Map(map));
+      setLastRefreshed(new Date());
+    } catch (err) {
+      console.error('price refresh error:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [cardIds]);
+
+  useEffect(() => {
+    if (!cardIds.length) return;
+    let cancelled = false;
+    (async () => {
+      setRefreshing(true);
+      try {
+        const map = await refreshStaleCardPrices(cardIds, false);
+        if (!cancelled) { setPriceOverrides(new Map(map)); setLastRefreshed(new Date()); }
+      } catch (err) {
+        console.error('price refresh error:', err);
+      } finally {
+        if (!cancelled) setRefreshing(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // cardIdsKey is the stable string representation of cardIds
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardIdsKey]);
 
   const eventOptions = useMemo(() => {
     const seen = new Map();
@@ -165,7 +229,7 @@ export default function Stock() {
     return transactions.filter((tx) => String(tx.event?.id) === eventFilter);
   }, [transactions, eventFilter]);
 
-  const allItems = useMemo(() => computeStockItems(scopedTxs), [scopedTxs]);
+  const allItems = useMemo(() => computeStockItems(scopedTxs, priceOverrides), [scopedTxs, priceOverrides]);
 
   const filtered = useMemo(() => {
     const q = normalizeStr(query.trim().toLowerCase());
@@ -178,6 +242,13 @@ export default function Stock() {
       : allItems;
     return applySort(matching, sort);
   }, [allItems, query, sort]);
+
+  // Reset to page 1 whenever the filtered set or view changes
+  useEffect(() => { setPage(1); }, [filtered, view]);
+
+  const pageSize   = view === 'grid' ? PAGE_SIZE_GRID : PAGE_SIZE_LIST;
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paged      = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const totalUnits = allItems.reduce((sum, i) => sum + i.qty, 0);
 
@@ -246,9 +317,26 @@ export default function Stock() {
 
           {/* Summary */}
           {allItems.length > 0 && (
-            <Text size="xs" c="dimmed">
-              {allItems.length} unique item{allItems.length !== 1 ? 's' : ''} · {totalUnits} total unit{totalUnits !== 1 ? 's' : ''}
-            </Text>
+            <Group gap="xs" align="center">
+              <Text size="xs" c="dimmed">
+                {allItems.length} unique item{allItems.length !== 1 ? 's' : ''} · {totalUnits} total unit{totalUnits !== 1 ? 's' : ''}
+              </Text>
+              {lastRefreshed && (
+                <Text size="xs" c="dimmed">
+                  · prices {lastRefreshed.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                </Text>
+              )}
+              <ActionIcon
+                size="xs"
+                variant="subtle"
+                color="gray"
+                loading={refreshing}
+                onClick={() => doRefresh(true)}
+                title="Force refresh prices"
+              >
+                <IconRefresh size={11} />
+              </ActionIcon>
+            </Group>
           )}
 
           {/* List / Grid */}
@@ -267,22 +355,41 @@ export default function Stock() {
             )
           ) : view === 'list' ? (
             <Stack gap="sm">
-              {filtered.map((item) => (
+              {paged.map((item) => (
                 <StockRow key={item.key} item={item} />
               ))}
             </Stack>
           ) : (
-            <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="sm">
-              {filtered.map((item) => (
-                <StockGridItem key={item.key} item={item} />
+            <Box style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 'var(--mantine-spacing-sm)' }}>
+              {paged.map((item) => (
+                <StockGridItem
+                  key={item.key}
+                  item={item}
+                  onCardClick={(id, imageUrl) => setDetailCard({ id, imageUrl })}
+                />
               ))}
-            </SimpleGrid>
+            </Box>
+          )}
+
+          {totalPages > 1 && (
+            <Pagination
+              value={page}
+              onChange={setPage}
+              total={totalPages}
+              size="sm"
+              color="violet"
+            />
           )}
 
         </Stack>
       </ScrollArea>
 
       <ImportModal opened={importOpen} onClose={() => setImportOpen(false)} />
+      <CardDetailModal
+        cardExternalId={detailCard?.id ?? null}
+        fallbackImageUrl={detailCard?.imageUrl ?? null}
+        onClose={() => setDetailCard(null)}
+      />
     </Box>
   );
 }

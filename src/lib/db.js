@@ -173,10 +173,13 @@ export async function updateTransactionNotes({ txId, notes }) {
   if (error) throw error;
 }
 
-export async function updateTransactionLine({ lineId, unitPriceMyr }) {
+export async function updateTransactionLine({ lineId, unitPriceMyr, qty }) {
+  const updates = {};
+  if (unitPriceMyr !== undefined) updates.unit_price_myr = unitPriceMyr;
+  if (qty !== undefined) updates.qty = qty;
   const { error } = await supabase
     .from('transaction_lines')
-    .update({ unit_price_myr: unitPriceMyr })
+    .update(updates)
     .eq('id', lineId);
   if (error) throw error;
 }
@@ -187,6 +190,46 @@ export async function deleteTransactionLine(lineId) {
     .delete()
     .eq('id', lineId);
   if (error) throw error;
+}
+
+// ─── Price cache ─────────────────────────────────────────────────────────────
+
+export async function getCachedPrices(cardIds) {
+  if (!cardIds.length) return new Map();
+  const { data, error } = await supabase
+    .from('card_price_cache')
+    .select('card_external_id, price_myr, price_source, fetched_at, price_updated_at')
+    .in('card_external_id', cardIds);
+  if (error) throw error;
+  return new Map(
+    (data ?? []).map((r) => [
+      r.card_external_id,
+      {
+        priceMyr:       r.price_myr,
+        priceSource:    r.price_source,
+        fetchedAt:      new Date(r.fetched_at),
+        priceUpdatedAt: r.price_updated_at ? new Date(r.price_updated_at) : null,
+      },
+    ])
+  );
+}
+
+export async function upsertCachedPrices(entries) {
+  if (!entries.length) return;
+  const { error } = await supabase
+    .from('card_price_cache')
+    .upsert(entries, { onConflict: 'card_external_id' });
+  if (error) throw error;
+}
+
+export async function claimStaleCards(cardIds, force = false) {
+  if (!cardIds.length) return [];
+  const { data, error } = await supabase.rpc('claim_stale_cards', {
+    p_card_ids: cardIds,
+    p_force:    force,
+  });
+  if (error) throw error;
+  return data ?? [];
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────

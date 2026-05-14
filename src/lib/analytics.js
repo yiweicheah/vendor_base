@@ -3,7 +3,7 @@
  * Returns card items (keyed by cardExternalId) and sealed items (keyed by sealedName).
  * All monetary values in MYR.
  */
-export function computeStockItems(transactions) {
+export function computeStockItems(transactions, priceOverrides = new Map()) {
   // key → { type, meta, qtyIn, qtyOut, costIn, marketIn }
   const map = new Map();
 
@@ -54,8 +54,11 @@ export function computeStockItems(transactions) {
     const net = s.qtyIn - s.qtyOut;
     if (net <= 0 || s.qtyIn === 0 || !s.meta) continue;
     const ratio = net / s.qtyIn;
-    const costBasis   = +(s.costIn   * ratio).toFixed(2);
-    const marketValue = +(s.marketIn * ratio).toFixed(2);
+    const costBasis = +(s.costIn * ratio).toFixed(2);
+    const override = s.type === 'card' ? priceOverrides.get(key) : null;
+    const marketValue = override
+      ? +(override.priceMyr * net).toFixed(2)
+      : +(s.marketIn * ratio).toFixed(2);
     if (s.type === 'card') {
       items.push({
         type:           'card',

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Modal, Stack, TextInput,
-  Center, Text, Button, SimpleGrid, Box, Skeleton,
+  Center, Text, Button, Box, Skeleton,
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconSearch } from '@tabler/icons-react';
@@ -12,15 +12,17 @@ import CardGrid from './CardGrid';
 
 function LoadingSkeleton() {
   return (
-    <SimpleGrid cols={2} spacing={8} verticalSpacing={12}>
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Box key={i}>
-          <Skeleton style={{ aspectRatio: '245/337' }} radius="xs" />
-          <Skeleton height={13} mt={6} radius="xs" width="75%" />
-          <Skeleton height={11} mt={4} radius="xs" width="45%" />
-        </Box>
-      ))}
-    </SimpleGrid>
+    <Box>
+      <Box style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', columnGap: 8, rowGap: 12 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Box key={i}>
+            <Skeleton style={{ aspectRatio: '245/337' }} radius="xs" />
+            <Skeleton height={13} mt={6} radius="xs" width="75%" />
+            <Skeleton height={11} mt={4} radius="xs" width="45%" />
+          </Box>
+        ))}
+      </Box>
+    </Box>
   );
 }
 
