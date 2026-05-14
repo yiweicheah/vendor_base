@@ -152,8 +152,9 @@ export async function saveTransaction({ orgId, createdById, notes, eventId }) {
 
 export async function saveTransactionLine(vars) {
   const row = toSnakeObj(vars);
-  const { error } = await supabase.from('transaction_lines').insert(row);
+  const { data, error } = await supabase.from('transaction_lines').insert(row).select('id').single();
   if (error) throw error;
+  return data.id;
 }
 
 export async function deleteTransaction({ txId, deletedById }) {
