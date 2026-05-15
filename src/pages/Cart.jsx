@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Stack, Paper, Group, Text, Button, Box,
   ThemeIcon, ScrollArea,
@@ -112,7 +112,7 @@ function CartSection({ side, lines, onAddCard, onAddCash }) {
 // ─── Main Cart page ───────────────────────────────────────────────────────────
 
 export default function Cart() {
-  const { inLines, outLines, addLine, clearCart } = useCartStore();
+  const { inLines, outLines, addLine, removeLine, updateLine, clearCart } = useCartStore();
   const { user }           = useAuthStore();
   const { org, activeEventId, setTransactions } = useOrgStore();
   const [saving,           setSaving]           = useState(false);
@@ -123,6 +123,36 @@ export default function Cart() {
   const inTotal  = lineTotal(inLines);
   const outTotal = lineTotal(outLines);
   const hasLines = inLines.length > 0 || outLines.length > 0;
+
+  useEffect(() => {
+    const balanceIn  = inLines.find(l => l.isAutoBalance);
+    const balanceOut = outLines.find(l => l.isAutoBalance);
+
+    const manualIn  = lineTotal(inLines.filter(l => !l.isAutoBalance));
+    const manualOut = lineTotal(outLines.filter(l => !l.isAutoBalance));
+    const diff = manualIn - manualOut;
+
+    if (Math.abs(diff) < 0.005) {
+      if (balanceIn)  removeLine('in',  balanceIn.id);
+      if (balanceOut) removeLine('out', balanceOut.id);
+    } else if (diff > 0) {
+      if (balanceIn) removeLine('in', balanceIn.id);
+      if (balanceOut) {
+        if (Math.abs(balanceOut.unitPrice - diff) > 0.001)
+          updateLine('out', balanceOut.id, { unitPrice: diff });
+      } else {
+        addLine('out', { type: 'cash', qty: 1, unitPrice: diff, isAutoBalance: true });
+      }
+    } else {
+      if (balanceOut) removeLine('out', balanceOut.id);
+      if (balanceIn) {
+        if (Math.abs(balanceIn.unitPrice - (-diff)) > 0.001)
+          updateLine('in', balanceIn.id, { unitPrice: -diff });
+      } else {
+        addLine('in', { type: 'cash', qty: 1, unitPrice: -diff, isAutoBalance: true });
+      }
+    }
+  }, [inLines, outLines, addLine, removeLine, updateLine]);
 
   function handleAddCard(side) {
     if (side === 'out') {

@@ -79,7 +79,7 @@ export default function StockPickerModal({ opened, onClose, onSearchFallback }) 
     addLine('out', {
       type:          'card',
       qty:           1,
-      unitPrice:     item.avgCost,
+      unitPrice:     item.avgMarket ?? item.avgCost,
       cardExternalId: item.key,
       cardName:      item.name,
       cardNumber:    item.number,
@@ -87,9 +87,9 @@ export default function StockPickerModal({ opened, onClose, onSearchFallback }) 
       lang:          item.lang,
       imageUrl:      item.imageUrl,
       marketPrice:   item.avgMarket,
+      avgCost:       item.avgCost,
       priceSource:   null,
     });
-    onClose();
   }
 
   function handleClose() {

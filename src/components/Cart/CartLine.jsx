@@ -37,6 +37,26 @@ export default function CartLine({ line, side }) {
     updateLine(side, line.id, { qty: line.qty - 1 });
   }
 
+  // ─── Auto-balance cash line ───────────────────────────────────────────────
+  if (line.type === 'cash' && line.isAutoBalance) {
+    return (
+      <Paper withBorder p="sm" radius="md" style={{ opacity: 0.85 }}>
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon variant="light" color="violet" size="md" radius="sm">
+              <IconCurrencyDollar size={16} />
+            </ThemeIcon>
+            <Stack gap={0}>
+              <Text size="sm" fw={500}>Cash</Text>
+              <Text size="xs" c="dimmed">auto-balance</Text>
+            </Stack>
+          </Group>
+          <Text size="sm" fw={600}>RM {(line.unitPrice ?? 0).toFixed(2)}</Text>
+        </Group>
+      </Paper>
+    );
+  }
+
   // ─── Cash line ────────────────────────────────────────────────────────────
   if (line.type === 'cash') {
     return (
@@ -179,11 +199,16 @@ export default function CartLine({ line, side }) {
         {/* Row 3 — market hint */}
         <Divider variant="dashed" />
         <Group justify="space-between" align="center">
-          <Text size="xs" c="dimmed">
-            {line.marketPrice
-              ? `Market RM ${line.marketPrice.toFixed(2)}${line.priceSource ? ` · ${line.priceSource}` : ''}`
-              : 'No market data'}
-          </Text>
+          <Stack gap={2}>
+            <Text size="xs" c="dimmed">
+              {line.marketPrice
+                ? `Market RM ${line.marketPrice.toFixed(2)}${line.priceSource ? ` · ${line.priceSource}` : ''}`
+                : 'No market data'}
+            </Text>
+            {side === 'out' && line.avgCost != null && (
+              <Text size="xs" c="dimmed">Avg cost RM {line.avgCost.toFixed(2)}</Text>
+            )}
+          </Stack>
           {pct != null && (
             <Badge color={color} variant="light" size="sm">
               {pct}%

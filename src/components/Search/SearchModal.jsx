@@ -207,9 +207,7 @@ export default function SearchModal({ opened, onClose, side, onCardSelect }) {
         priceSource:    priceInfo?.source ?? null,
       });
     }
-
-    onClose();
-  }, [side, addLine, onClose, onCardSelect]);
+  }, [side, addLine, onCardSelect]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   // idle = nothing searched yet; noResults = searched and got nothing back
