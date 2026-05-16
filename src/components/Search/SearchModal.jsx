@@ -5,6 +5,7 @@ import {
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconSearch } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import { searchCards, getCardDetail, getCardImage, extractPrice } from '../../lib/pokewallet';
 import { tokenize, buildQuery, isQueryTooShort, buildAlternateNumberQuery, normalizeStr } from '../../lib/tokenizer';
 import useCartStore from '../../store/cartStore';
@@ -194,17 +195,25 @@ export default function SearchModal({ opened, onClose, side, onCardSelect }) {
         priceSource:    priceInfo?.source ?? null,
       });
     } else {
+      const cardName   = resolved.card_info?.name ?? '';
+      const cardNumber = resolved.card_info?.card_number ?? '';
+      const setName    = resolved.card_info?.set_name ?? '';
       addLine(side, {
         type:           'card',
         qty:            1,
         unitPrice:      priceInfo?.myr ?? 0,
         cardExternalId: resolved.id,
-        cardName:       resolved.card_info?.name ?? '',
-        cardNumber:     resolved.card_info?.card_number ?? '',
-        setName:        resolved.card_info?.set_name ?? '',
+        cardName,
+        cardNumber,
+        setName,
         imageUrl:       imageUrl ?? null,
         marketPrice:    priceInfo?.myr ?? null,
         priceSource:    priceInfo?.source ?? null,
+      });
+      notifications.show({
+        message:   `${cardName} (${setName}/${cardNumber}) added to ${side === 'in' ? 'coming in' : 'going out'}`,
+        color:     side === 'in' ? 'violet' : 'gray',
+        autoClose: 2000,
       });
     }
   }, [side, addLine, onCardSelect]);

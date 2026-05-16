@@ -1,57 +1,69 @@
 import { useMemo, useState } from 'react';
 import {
-  Modal, Stack, TextInput, ScrollArea, Group, Text,
-  Badge, Image, Box, UnstyledButton, Center, ThemeIcon, Anchor,
+  Modal, Stack, TextInput, ScrollArea, Text,
+  Box, Center, ThemeIcon, Anchor, Overlay, Loader,
 } from '@mantine/core';
 import { IconSearch, IconPackage } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import { computeStockItems } from '../../lib/analytics';
 import { normalizeStr } from '../../lib/tokenizer';
 import useCartStore from '../../store/cartStore';
 import useOrgStore from '../../store/orgStore';
 
-function StockPickerRow({ item, onSelect }) {
+function StockTile({ item, onSelect }) {
+  const [selecting, setSelecting] = useState(false);
+
+  async function handleTap() {
+    if (selecting) return;
+    setSelecting(true);
+    try {
+      await onSelect(item);
+    } finally {
+      setSelecting(false);
+    }
+  }
+
   return (
-    <UnstyledButton
-      onClick={() => onSelect(item)}
-      style={{ width: '100%' }}
-    >
-      <Group
-        justify="space-between"
-        wrap="nowrap"
-        gap="sm"
-        px="xs"
-        py={6}
-        style={{ borderRadius: 6 }}
-        className="stock-picker-row"
+    <Box onClick={handleTap} style={{ cursor: 'pointer', userSelect: 'none' }}>
+      <Box
+        style={{
+          position:     'relative',
+          aspectRatio:  '245 / 337',
+          background:   'var(--mantine-color-dark-6)',
+          borderRadius: 4,
+          overflow:     'hidden',
+        }}
       >
-        {/* Thumbnail */}
-        <Box style={{ flexShrink: 0 }}>
-          {item.imageUrl ? (
-            <Image src={item.imageUrl} w={28} h={39} radius="sm" fit="contain" />
-          ) : (
-            <Box
-              w={28} h={39}
-              bg="dark.6"
-              style={{ borderRadius: 4 }}
-            />
-          )}
-        </Box>
-
-        {/* Identity */}
-        <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
-          <Text size="sm" fw={500} truncate>{item.name}</Text>
-          <Text size="xs" c="dimmed" truncate>
-            {[item.setName, item.number, item.lang].filter(Boolean).join(' · ')}
-          </Text>
-          <Text size="xs" c="dimmed">Avg RM {item.avgCost.toFixed(2)}</Text>
-        </Stack>
-
-        {/* Qty */}
-        <Badge color="violet" variant="light" size="sm" style={{ flexShrink: 0 }}>
-          ×{item.qty}
-        </Badge>
-      </Group>
-    </UnstyledButton>
+        {item.imageUrl && (
+          <img
+            src={item.imageUrl}
+            loading="lazy"
+            alt={item.name}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        )}
+        {selecting && (
+          <Overlay backgroundOpacity={0.4} radius={4}>
+            <Center h="100%">
+              <Loader size="sm" color="violet" />
+            </Center>
+          </Overlay>
+        )}
+      </Box>
+      <Box p={6} style={{ minHeight: 64 }}>
+        <Text size="13px" fw={500} lineClamp={1}>{item.name}</Text>
+        <Text size="11px" c="dimmed" lineClamp={1}>
+          {[item.setName, item.number, item.lang].filter(Boolean).join(' · ')}
+        </Text>
+        <Text size="11px" c="teal.4" fw={500}>
+          {item.avgMarket ? `RM ${item.avgMarket.toFixed(2)}` : 'No market data'}
+          {item.avgMarket ? <Text span size="10px" c="dimmed" fw={400}> · market</Text> : null}
+        </Text>
+        <Text size="11px" c="dimmed">
+          Cost RM {item.avgCost.toFixed(2)}
+        </Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -77,18 +89,23 @@ export default function StockPickerModal({ opened, onClose, onSearchFallback }) 
 
   function handleSelect(item) {
     addLine('out', {
-      type:          'card',
-      qty:           1,
-      unitPrice:     item.avgMarket ?? item.avgCost,
+      type:           'card',
+      qty:            1,
+      unitPrice:      item.avgMarket ?? item.avgCost,
       cardExternalId: item.key,
-      cardName:      item.name,
-      cardNumber:    item.number,
-      setName:       item.setName,
-      lang:          item.lang,
-      imageUrl:      item.imageUrl,
-      marketPrice:   item.avgMarket,
-      avgCost:       item.avgCost,
-      priceSource:   null,
+      cardName:       item.name,
+      cardNumber:     item.number,
+      setName:        item.setName,
+      lang:           item.lang,
+      imageUrl:       item.imageUrl,
+      marketPrice:    item.avgMarket,
+      avgCost:        item.avgCost,
+      priceSource:    null,
+    });
+    notifications.show({
+      message:   `${item.name} (${item.setName}/${item.number}) added to going out`,
+      color:     'gray',
+      autoClose: 2000,
     });
   }
 
@@ -107,7 +124,7 @@ export default function StockPickerModal({ opened, onClose, onSearchFallback }) 
       opened={opened}
       onClose={handleClose}
       title="Pick from stock"
-      size="sm"
+      size="lg"
       styles={{ body: { padding: 0 } }}
     >
       <Stack gap={0}>
@@ -122,7 +139,7 @@ export default function StockPickerModal({ opened, onClose, onSearchFallback }) 
           />
         </Box>
 
-        <ScrollArea h={360} px="md">
+        <ScrollArea h={480} px="md">
           {filtered.length === 0 ? (
             <Center py="xl">
               <Stack align="center" gap="xs">
@@ -135,11 +152,19 @@ export default function StockPickerModal({ opened, onClose, onSearchFallback }) 
               </Stack>
             </Center>
           ) : (
-            <Stack gap={2}>
+            <Box
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+                columnGap:           8,
+                rowGap:              12,
+                paddingBottom:       12,
+              }}
+            >
               {filtered.map((item) => (
-                <StockPickerRow key={item.key} item={item} onSelect={handleSelect} />
+                <StockTile key={item.key} item={item} onSelect={handleSelect} />
               ))}
-            </Stack>
+            </Box>
           )}
         </ScrollArea>
 
