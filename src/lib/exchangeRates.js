@@ -20,9 +20,6 @@ export async function fetchExchangeRates() {
       EUR_TO_MYR: eurData[0].rate,
     };
     lastFetched = new Date();
-    console.log(
-      `Rates: USD→MYR ${rates.USD_TO_MYR}, EUR→MYR ${rates.EUR_TO_MYR}`,
-    );
   } catch (err) {
     console.warn("Exchange rate fetch failed, using fallback:", err.message);
   }

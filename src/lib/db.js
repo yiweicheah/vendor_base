@@ -197,22 +197,25 @@ export async function deleteTransactionLine(lineId) {
 
 export async function getCachedPrices(cardIds) {
   if (!cardIds.length) return new Map();
-  const { data, error } = await supabase
-    .from('card_price_cache')
-    .select('card_external_id, price_myr, price_source, fetched_at, price_updated_at')
-    .in('card_external_id', cardIds);
-  if (error) throw error;
-  return new Map(
-    (data ?? []).map((r) => [
-      r.card_external_id,
-      {
+  const CHUNK = 50;
+  const result = new Map();
+  for (let i = 0; i < cardIds.length; i += CHUNK) {
+    const chunk = cardIds.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('card_price_cache')
+      .select('card_external_id, price_myr, price_source, fetched_at, price_updated_at')
+      .in('card_external_id', chunk);
+    if (error) throw error;
+    for (const r of data ?? []) {
+      result.set(r.card_external_id, {
         priceMyr:       r.price_myr,
         priceSource:    r.price_source,
         fetchedAt:      new Date(r.fetched_at),
         priceUpdatedAt: r.price_updated_at ? new Date(r.price_updated_at) : null,
-      },
-    ])
-  );
+      });
+    }
+  }
+  return result;
 }
 
 export async function upsertCachedPrices(entries) {

@@ -25,6 +25,7 @@ import {
 } from '@tabler/icons-react';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
 import { getRates, getLastFetched } from '../../lib/exchangeRates';
+import { getLastPriceFetched } from '../../lib/priceRefresh';
 import useOrgStore from '../../store/orgStore';
 
 const VIEW_TITLES = {
@@ -117,11 +118,22 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, switchin
     return () => clearTimeout(t);
   }, []);
 
-  const rates     = getRates();
-  const fetched   = getLastFetched();
+  // Re-render whenever price refresh completes
+  useEffect(() => {
+    const handler = () => forceRender((n) => n + 1);
+    window.addEventListener('pricerefreshed', handler);
+    return () => window.removeEventListener('pricerefreshed', handler);
+  }, []);
+
+  const rates          = getRates();
+  const fetched        = getLastFetched();
+  const priceFetched   = getLastPriceFetched();
   const rateLabel = fetched
     ? `USD ${rates.USD_TO_MYR.toFixed(2)} · EUR ${rates.EUR_TO_MYR.toFixed(2)} · ${fetched.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })}`
     : `USD ${rates.USD_TO_MYR.toFixed(2)} · EUR ${rates.EUR_TO_MYR.toFixed(2)}`;
+  const priceLabel = priceFetched
+    ? `Prices as of ${priceFetched.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+    : null;
 
   return (
     <>
@@ -189,7 +201,7 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, switchin
             ))}
           </Group>
           <Text size="10px" c="dimmed" ta="center" pb={2}>
-            {rateLabel}
+            {rateLabel}{priceLabel ? ` · ${priceLabel}` : ''}
           </Text>
         </Stack>
       </AppShell.Footer>

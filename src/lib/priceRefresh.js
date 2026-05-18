@@ -6,6 +6,9 @@ const BATCH_DELAY_MS  = 150;
 const DAILY_MS        = 24 * 60 * 60 * 1000;
 const DELAY_BUFFER_MS =  2 * 60 * 60 * 1000; // absorbs API update delays
 
+let lastPriceFetchedAt = null;
+export function getLastPriceFetched() { return lastPriceFetchedAt; }
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -70,6 +73,13 @@ export async function refreshStaleCardPrices(cardIds, forceRefresh = false) {
   }
 
   if (fresh.length > 0) await upsertCachedPrices(fresh);
+
+  for (const entry of cached.values()) {
+    if (entry.fetchedAt && (!lastPriceFetchedAt || entry.fetchedAt > lastPriceFetchedAt)) {
+      lastPriceFetchedAt = entry.fetchedAt;
+    }
+  }
+  window.dispatchEvent(new CustomEvent('pricerefreshed'));
 
   return cached;
 }

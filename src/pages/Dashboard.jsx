@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import {
   Box, ScrollArea, Stack, Paper, Group, Text, Divider,
   ThemeIcon, Center, Button, Modal, NumberInput, TextInput, ActionIcon,
@@ -272,6 +272,7 @@ function ByEventSection({ breakdown, events, canEdit, onEdit }) {
   );
   const [search, setSearch] = useState('');
   const [page,   setPage]   = useState(1);
+  const topRef = useRef(null);
 
   function setCollapsed(v) { setCollapsedRaw(v); localStorage.setItem('dashboard_events_collapsed', String(v)); }
   function setSort(v)      { setSortRaw(v);      localStorage.setItem('dashboard_events_sort', v);     setPage(1); }
@@ -309,7 +310,7 @@ function ByEventSection({ breakdown, events, canEdit, onEdit }) {
   const paginated  = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
-    <Stack gap="sm">
+    <Stack gap="sm" ref={topRef}>
       <Group justify="space-between" align="center">
         <Group
           gap={4}
@@ -405,7 +406,7 @@ function ByEventSection({ breakdown, events, canEdit, onEdit }) {
 
           {totalPages > 1 && (
             <Group justify="center" mt="xs">
-              <Pagination total={totalPages} value={safePage} onChange={setPage} size="xs" />
+              <Pagination total={totalPages} value={safePage} onChange={(p) => { setPage(p); topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} size="xs" />
             </Group>
           )}
         </Stack>
