@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box, ScrollArea, Stack, Group, Text, Badge,
   TextInput, Select, Image, Center, ThemeIcon, Button,
@@ -150,6 +150,7 @@ export default function Stock() {
   const [importOpen,     setImportOpen]     = useState(false);
   const [detailCard,     setDetailCard]     = useState(null); // { id, imageUrl }
   const [page,           setPage]           = useState(1);
+  const viewportRef = useRef(null);
   const [view,           setViewRaw]        = useState(() => localStorage.getItem('stock_view') ?? 'list');
   const [priceOverrides, setPriceOverrides] = useState(new Map());
   const [refreshing,     setRefreshing]     = useState(false);
@@ -254,7 +255,7 @@ export default function Stock() {
 
   return (
     <Box style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <ScrollArea style={{ flex: 1 }} p="md">
+      <ScrollArea style={{ flex: 1 }} p="md" viewportRef={viewportRef}>
         <Stack gap="md" pb="md">
 
           {/* Controls */}
@@ -374,7 +375,7 @@ export default function Stock() {
           {totalPages > 1 && (
             <Pagination
               value={page}
-              onChange={setPage}
+              onChange={(p) => { setPage(p); viewportRef.current?.scrollTo({ top: 0 }); }}
               total={totalPages}
               size="sm"
               color="violet"
