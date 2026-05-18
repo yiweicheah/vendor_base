@@ -195,4 +195,81 @@ describe('computeMetrics', () => {
     expect(m.stockQty).toBe(0);
     expect(m.cardBuyQty).toBe(0);
   });
+
+  // ── grossProfit per event ──────────────────────────────────────────────────
+
+  it('grossProfit: card sold with avgCostMyr → correct gross profit', () => {
+    const ev1 = { id: 'e1', name: 'E1' };
+    // sell 2 cards @ RM 10 each, avgCost RM 6 → profit = (10-6)*2 = 8
+    const line = { type: 'card', side: 'out', cardExternalId: 'A', qty: 2, unitPriceMyr: 10, avgCostMyr: 6 };
+    const m = computeMetrics([tx([line, cashIn(20)], ev1)]);
+    const ev = m.eventBreakdown[0];
+    expect(ev.grossProfit).toBe(8);
+    expect(ev.profitComplete).toBe(true);
+  });
+
+  it('grossProfit: card sold without avgCostMyr → profitComplete false, excluded from total', () => {
+    const ev1 = { id: 'e1', name: 'E1' };
+    const line = { type: 'card', side: 'out', cardExternalId: 'A', qty: 1, unitPriceMyr: 10, avgCostMyr: null };
+    const m = computeMetrics([tx([line, cashIn(10)], ev1)]);
+    const ev = m.eventBreakdown[0];
+    expect(ev.grossProfit).toBe(0);
+    expect(ev.profitComplete).toBe(false);
+  });
+
+  it('grossProfit: no card sales → grossProfit 0, profitComplete true', () => {
+    const ev1 = { id: 'e1', name: 'E1' };
+    const m = computeMetrics([tx([cashIn(50)], ev1)]);
+    const ev = m.eventBreakdown[0];
+    expect(ev.grossProfit).toBe(0);
+    expect(ev.profitComplete).toBe(true);
+  });
+
+  it('grossProfit: mixed lines (some with, some without avgCostMyr) → profitComplete false', () => {
+    const ev1 = { id: 'e1', name: 'E1' };
+    const withCost    = { type: 'card', side: 'out', cardExternalId: 'A', qty: 1, unitPriceMyr: 10, avgCostMyr: 5 };
+    const withoutCost = { type: 'card', side: 'out', cardExternalId: 'B', qty: 1, unitPriceMyr: 8,  avgCostMyr: null };
+    const m = computeMetrics([tx([withCost, withoutCost, cashIn(18)], ev1)]);
+    const ev = m.eventBreakdown[0];
+    expect(ev.grossProfit).toBe(5); // only the card with cost data contributes
+    expect(ev.profitComplete).toBe(false);
+  });
+
+  it('grossProfit: rounding to 2 decimal places', () => {
+    const ev1 = { id: 'e1', name: 'E1' };
+    // (10 - 3.333) * 3 = 20.001 → rounds to 20.00
+    const line = { type: 'card', side: 'out', cardExternalId: 'A', qty: 3, unitPriceMyr: 10, avgCostMyr: 3.333 };
+    const m = computeMetrics([tx([line, cashIn(30)], ev1)]);
+    expect(m.eventBreakdown[0].grossProfit).toBe(20.00);
+  });
+
+  // ── global grossProfit ────────────────────────────────────────────────────
+
+  it('global grossProfit: correct across all events', () => {
+    const ev1 = { id: 'e1', name: 'E1' };
+    const ev2 = { id: 'e2', name: 'E2' };
+    const lineA = { type: 'card', side: 'out', cardExternalId: 'A', qty: 2, unitPriceMyr: 10, avgCostMyr: 6 };
+    const lineB = { type: 'card', side: 'out', cardExternalId: 'B', qty: 1, unitPriceMyr: 15, avgCostMyr: 5 };
+    const m = computeMetrics([
+      tx([lineA, cashIn(20)], ev1),  // profit = 8
+      tx([lineB, cashIn(15)], ev2),  // profit = 10
+    ]);
+    expect(m.grossProfit).toBe(18);
+    expect(m.cardSoldTotal).toBe(3);
+    expect(m.profitComplete).toBe(true);
+  });
+
+  it('global grossProfit: profitComplete false when any line missing avgCostMyr', () => {
+    const line = { type: 'card', side: 'out', cardExternalId: 'A', qty: 1, unitPriceMyr: 10, avgCostMyr: null };
+    const m = computeMetrics([tx([line, cashIn(10)])]);
+    expect(m.profitComplete).toBe(false);
+    expect(m.grossProfit).toBe(0);
+  });
+
+  it('global grossProfit: no card sales → grossProfit 0, profitComplete true', () => {
+    const m = computeMetrics([tx([cashIn(50)])]);
+    expect(m.grossProfit).toBe(0);
+    expect(m.cardSoldTotal).toBe(0);
+    expect(m.profitComplete).toBe(true);
+  });
 });

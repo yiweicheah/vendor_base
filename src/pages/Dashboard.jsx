@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import {
   IconChartBar, IconTrendingUp, IconTrendingDown, IconMinus, IconPlus, IconPencil,
-  IconChevronDown, IconChevronUp, IconSearch,
+  IconChevronDown, IconChevronUp, IconSearch, IconArrowUp, IconArrowDown,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import useOrgStore from '../store/orgStore';
@@ -208,10 +208,12 @@ function AddFundsModal({ opened, onClose, org, user, onAdded }) {
 // ─── By Event section ────────────────────────────────────────────────────────
 
 const EVENT_SORT_OPTIONS = [
-  { value: 'txCount', label: 'Most transactions' },
-  { value: 'netCash', label: 'Net cash' },
-  { value: 'cashIn',  label: 'Cash in' },
-  { value: 'name',    label: 'Name' },
+  { value: 'txCount',     label: 'Most transactions' },
+  { value: 'grossProfit', label: 'Profit' },
+  { value: 'netCash',     label: 'Net cash' },
+  { value: 'cashIn',      label: 'Cash in' },
+  { value: 'date',        label: 'Date' },
+  { value: 'name',        label: 'Name' },
 ];
 const PAGE_SIZE = 5;
 
@@ -222,11 +224,15 @@ function ByEventSection({ breakdown, events, canEdit, onEdit }) {
   const [sort, setSortRaw] = useState(
     () => localStorage.getItem('dashboard_events_sort') ?? 'txCount'
   );
+  const [sortDir, setSortDirRaw] = useState(
+    () => localStorage.getItem('dashboard_events_sort_dir') ?? 'desc'
+  );
   const [search, setSearch] = useState('');
   const [page,   setPage]   = useState(1);
 
   function setCollapsed(v) { setCollapsedRaw(v); localStorage.setItem('dashboard_events_collapsed', String(v)); }
-  function setSort(v)      { setSortRaw(v);      localStorage.setItem('dashboard_events_sort', v); setPage(1); }
+  function setSort(v)      { setSortRaw(v);      localStorage.setItem('dashboard_events_sort', v);     setPage(1); }
+  function setSortDir(v)   { setSortDirRaw(v);   localStorage.setItem('dashboard_events_sort_dir', v); setPage(1); }
   function handleSearch(v) { setSearch(v); setPage(1); }
 
   const filtered = useMemo(() => {
@@ -237,12 +243,23 @@ function ByEventSection({ breakdown, events, canEdit, onEdit }) {
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
-    if (sort === 'name')    copy.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
-    if (sort === 'netCash') copy.sort((a, b) => b.netCash - a.netCash);
-    if (sort === 'cashIn')  copy.sort((a, b) => b.cashIn - a.cashIn);
-    if (sort === 'txCount') copy.sort((a, b) => b.txCount - a.txCount);
+    const dir  = sortDir === 'asc' ? 1 : -1;
+
+    if (sort === 'name') {
+      copy.sort((a, b) => dir * (a.name ?? '').localeCompare(b.name ?? ''));
+    } else if (sort === 'date') {
+      copy.sort((a, b) => {
+        if (a.id === '__none__') return 1;
+        if (b.id === '__none__') return -1;
+        const aTs = events.find((e) => e.id === a.id)?.startsAt ?? '';
+        const bTs = events.find((e) => e.id === b.id)?.startsAt ?? '';
+        return dir * (aTs < bTs ? -1 : aTs > bTs ? 1 : 0);
+      });
+    } else {
+      copy.sort((a, b) => dir * (a[sort] - b[sort]));
+    }
     return copy;
-  }, [filtered, sort]);
+  }, [filtered, sort, sortDir, events]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage   = Math.min(page, totalPages);
@@ -262,14 +279,24 @@ function ByEventSection({ breakdown, events, canEdit, onEdit }) {
           </ActionIcon>
         </Group>
         {!collapsed && (
-          <Select
-            data={EVENT_SORT_OPTIONS}
-            value={sort}
-            onChange={setSort}
-            size="xs"
-            w={160}
-            allowDeselect={false}
-          />
+          <Group gap={4}>
+            <Select
+              data={EVENT_SORT_OPTIONS}
+              value={sort}
+              onChange={setSort}
+              size="xs"
+              w={140}
+              allowDeselect={false}
+            />
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
+            >
+              {sortDir === 'desc' ? <IconArrowDown size={14} /> : <IconArrowUp size={14} />}
+            </ActionIcon>
+          </Group>
         )}
       </Group>
 
@@ -306,9 +333,22 @@ function ByEventSection({ breakdown, events, canEdit, onEdit }) {
                     </Group>
                   </Group>
                   <Group justify="space-between">
-                    <Text size="xs" c="dimmed">Cash in / out</Text>
-                    <Text size="xs" c="dimmed">{rm(ev.cashIn)} / {rm(ev.cashOut)}</Text>
+                    <Text size="xs" c="dimmed">Sales</Text>
+                    <Text size="xs">{rm(ev.cashIn)}</Text>
                   </Group>
+                  <Group justify="space-between">
+                    <Text size="xs" c="dimmed">Purchases</Text>
+                    <Text size="xs" c="dimmed">−{rm(ev.cashOut)}</Text>
+                  </Group>
+                  {ev.cardSoldTotal > 0 && (
+                    <Group justify="space-between">
+                      <Text size="xs" c="dimmed">Gross profit{!ev.profitComplete ? ' ~' : ''}</Text>
+                      <Text size="xs" fw={500} c={netColor(ev.grossProfit)}>
+                        {sign(ev.grossProfit)}{rm(ev.grossProfit)}
+                      </Text>
+                    </Group>
+                  )}
+                  <Divider variant="dashed" />
                   <Group justify="space-between">
                     <Text size="xs" fw={600}>Net</Text>
                     <Text size="xs" fw={600} c={netColor(ev.netCash)}>
@@ -442,8 +482,15 @@ export default function Dashboard() {
                     <MetaRow label="Cards bought"  value={`${m.cardBuyQty} pcs`} />
                     <MetaRow label="Cards sold"    value={`${m.cardSellQty} pcs`} />
                     <Divider variant="dashed" />
-                    <MetaRow label="Cash received" value={rm(m.cashIn)} />
-                    <MetaRow label="Cash paid"     value={rm(m.cashOut)} />
+                    <MetaRow label="Sales"     value={rm(m.cashIn)} />
+                    <MetaRow label="Purchases" value={`−${rm(m.cashOut)}`} />
+                    {m.cardSoldTotal > 0 && (
+                      <MetaRow
+                        label={`Gross profit${!m.profitComplete ? ' ~' : ''}`}
+                        value={`${sign(m.grossProfit)}${rm(m.grossProfit)}`}
+                        valueColor={netColor(m.grossProfit)}
+                      />
+                    )}
                     <Divider />
                     <Group justify="space-between">
                       <Text size="sm" fw={600}>Net cash</Text>

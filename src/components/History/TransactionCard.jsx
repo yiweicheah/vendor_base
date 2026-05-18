@@ -48,6 +48,30 @@ function lineTotal(lines) {
   return lines.reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
 }
 
+function rm(n)       { return `RM ${Math.abs(n).toFixed(2)}`; }
+function sign(n)     { return n > 0.005 ? '+' : n < -0.005 ? '−' : ''; }
+function netColor(n) { return n > 0.005 ? 'green.4' : n < -0.005 ? 'red.4' : 'dimmed'; }
+
+function txMetrics(lines) {
+  const sales     = lines.filter((l) => l.side === 'in'  && l.type === 'cash')
+                         .reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
+  const purchases = lines.filter((l) => l.side === 'out' && l.type === 'cash')
+                         .reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
+  const cardOut   = lines.filter((l) => l.side === 'out' && l.type === 'card' && l.cardExternalId);
+  const cardSoldTotal    = cardOut.reduce((s, l) => s + l.qty, 0);
+  const cardSoldWithCost = cardOut.filter((l) => l.avgCostMyr != null).reduce((s, l) => s + l.qty, 0);
+  const grossProfit      = cardOut.filter((l) => l.avgCostMyr != null)
+                                  .reduce((s, l) => s + ((l.unitPriceMyr || 0) - l.avgCostMyr) * l.qty, 0);
+  return {
+    sales,
+    purchases,
+    grossProfit:    +grossProfit.toFixed(2),
+    cardSoldTotal,
+    profitComplete: cardSoldTotal === 0 || cardSoldWithCost === cardSoldTotal,
+    net:            sales - purchases,
+  };
+}
+
 // ─── Line row ─────────────────────────────────────────────────────────────────
 
 function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits, onDelete, deletingLine }) {
@@ -75,10 +99,12 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
           <Text size="sm" fw={500} truncate>{label ?? '—'}</Text>
           {sub && <Text size="xs" c="dimmed" truncate>{sub}</Text>}
           {line.side === 'out' && line.type === 'card' && line.avgCostMyr != null && !editing && (() => {
-            const pct = ((unitPrice - line.avgCostMyr) / line.avgCostMyr) * 100;
+            const pct = line.avgCostMyr > 0
+              ? ((unitPrice - line.avgCostMyr) / line.avgCostMyr) * 100
+              : null;
             return (
-              <Text size="xs" c={pct >= 0 ? 'teal.4' : 'red.4'}>
-                Avg RM {line.avgCostMyr.toFixed(2)} · {pct >= 0 ? '+' : ''}{pct.toFixed(0)}%
+              <Text size="xs" c={pct == null ? 'dimmed' : pct >= 0 ? 'teal.4' : 'red.4'}>
+                Avg RM {line.avgCostMyr.toFixed(2)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
               </Text>
             );
           })()}
@@ -177,6 +203,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
 
   const displayTotal = inTotal > 0 ? inTotal : outTotal;
   const creator      = tx.createdBy?.displayName;
+  const m            = txMetrics(lines);
 
   // ─── Delete transaction ────────────────────────────────────────────────────
 
@@ -451,6 +478,21 @@ export default function TransactionCard({ tx, view = 'list' }) {
             {summaryParts.join(' · ')}{creator ? ` · ${creator}` : ''}
           </Text>
           <Text size="xs" c="dimmed">{formatDate(tx.createdAt)}</Text>
+          <Group gap="xs" wrap="wrap" mt={2}>
+            <Text size="xs" c="dimmed">Sales {rm(m.sales)}</Text>
+            <Text size="xs" c="dimmed">·</Text>
+            <Text size="xs" c="dimmed">Purchases −{rm(m.purchases)}</Text>
+            {m.cardSoldTotal > 0 && (
+              <>
+                <Text size="xs" c="dimmed">·</Text>
+                <Text size="xs" c={netColor(m.grossProfit)}>
+                  Profit {sign(m.grossProfit)}{rm(m.grossProfit)}{!m.profitComplete ? ' ~' : ''}
+                </Text>
+              </>
+            )}
+            <Text size="xs" c="dimmed">·</Text>
+            <Text size="xs" fw={500} c={netColor(m.net)}>Net {sign(m.net)}{rm(m.net)}</Text>
+          </Group>
         </Stack>
 
         {/* Right — action icons */}
@@ -589,10 +631,12 @@ export default function TransactionCard({ tx, view = 'list' }) {
                                 <Text size="xs" c="dimmed">Mkt RM {l.marketPriceMyr.toFixed(2)}</Text>
                               )}
                               {l.side === 'out' && l.avgCostMyr != null && (() => {
-                                const pct = ((l.unitPriceMyr ?? 0) - l.avgCostMyr) / l.avgCostMyr * 100;
+                                const pct = l.avgCostMyr > 0
+                                  ? ((l.unitPriceMyr ?? 0) - l.avgCostMyr) / l.avgCostMyr * 100
+                                  : null;
                                 return (
-                                  <Text size="xs" c={pct >= 0 ? 'teal.4' : 'red.4'}>
-                                    Avg RM {l.avgCostMyr.toFixed(2)} · {pct >= 0 ? '+' : ''}{pct.toFixed(0)}%
+                                  <Text size="xs" c={pct == null ? 'dimmed' : pct >= 0 ? 'teal.4' : 'red.4'}>
+                                    Avg RM {l.avgCostMyr.toFixed(2)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
                                   </Text>
                                 );
                               })()}

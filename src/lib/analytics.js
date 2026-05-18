@@ -91,11 +91,14 @@ export function computeStockItems(transactions, priceOverrides = new Map()) {
  * All values in MYR.
  */
 export function computeMetrics(transactions) {
-  let txCount      = 0;
-  let cashIn       = 0;
-  let cashOut      = 0;
-  let cardBuyQty   = 0;
-  let cardSellQty  = 0;
+  let txCount          = 0;
+  let cashIn           = 0;
+  let cashOut          = 0;
+  let cardBuyQty       = 0;
+  let cardSellQty      = 0;
+  let grossProfit      = 0;
+  let cardSoldTotal    = 0;
+  let cardSoldWithCost = 0;
 
   // cardId → { qtyIn, qtyOut, costIn (RM paid), marketIn (RM market at buy time) }
   const stockMap = new Map();
@@ -110,7 +113,8 @@ export function computeMetrics(transactions) {
     const evName = tx.event?.name ?? null;
 
     if (!byEvent.has(evId)) {
-      byEvent.set(evId, { name: evName, txCount: 0, cashIn: 0, cashOut: 0 });
+      byEvent.set(evId, { name: evName, txCount: 0, cashIn: 0, cashOut: 0,
+                          grossProfit: 0, cardSoldTotal: 0, cardSoldWithCost: 0 });
     }
     const ev = byEvent.get(evId);
     ev.txCount++;
@@ -140,6 +144,14 @@ export function computeMetrics(transactions) {
           const id = String(line.cardExternalId);
           if (!stockMap.has(id)) stockMap.set(id, { qtyIn: 0, qtyOut: 0, costIn: 0, marketIn: 0 });
           stockMap.get(id).qtyOut += line.qty;
+          ev.cardSoldTotal += line.qty;
+          cardSoldTotal    += line.qty;
+          if (line.avgCostMyr != null) {
+            ev.grossProfit      += ((line.unitPriceMyr || 0) - line.avgCostMyr) * line.qty;
+            ev.cardSoldWithCost += line.qty;
+            grossProfit         += ((line.unitPriceMyr || 0) - line.avgCostMyr) * line.qty;
+            cardSoldWithCost    += line.qty;
+          }
         }
       }
     }
@@ -167,7 +179,10 @@ export function computeMetrics(transactions) {
       txCount: d.txCount,
       cashIn:  d.cashIn,
       cashOut: d.cashOut,
-      netCash: d.cashIn - d.cashOut,
+      netCash:        d.cashIn - d.cashOut,
+      grossProfit:    +d.grossProfit.toFixed(2),
+      cardSoldTotal:  d.cardSoldTotal,
+      profitComplete: d.cardSoldTotal === 0 || d.cardSoldWithCost === d.cardSoldTotal,
     }))
     .sort((a, b) => {
       if (a.id === '__none__') return 1;
@@ -180,6 +195,9 @@ export function computeMetrics(transactions) {
     cashIn,
     cashOut,
     netCash:         cashIn - cashOut,
+    grossProfit:     +grossProfit.toFixed(2),
+    cardSoldTotal,
+    profitComplete:  cardSoldTotal === 0 || cardSoldWithCost === cardSoldTotal,
     cardBuyQty,
     cardSellQty,
     stockQty,

@@ -30,6 +30,7 @@ function maxUnitPrice(lines) {
   return lines.reduce((m, l) => Math.max(m, l.unitPriceMyr || 0), 0);
 }
 
+
 export default function History() {
   const transactions  = useOrgStore((s) => s.transactions);
   const events        = useOrgStore((s) => s.events);
@@ -73,6 +74,7 @@ export default function History() {
     if (eventFilter === '__none__') return sorted.filter((tx) => tx.event == null);
     return sorted.filter((tx) => tx.event?.id === eventFilter);
   }, [sorted, eventFilter]);
+
 
   if (transactions.length === 0) {
     return (
