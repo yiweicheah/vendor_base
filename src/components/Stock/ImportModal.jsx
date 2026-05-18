@@ -283,7 +283,7 @@ export default function ImportModal({ opened, onClose }) {
         const entry = await createFundEntry({
           orgId:       org.id,
           amountMyr:   totalCost,
-          note:        `Auto-deposit for stock import — ${date}`,
+          note:        `Auto-deposit for stock import — ${date} [tx:${txId}]`,
           createdById: user.dbId,
         });
         addFundEntry({ ...entry, amountMyr: totalCost });

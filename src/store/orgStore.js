@@ -17,6 +17,10 @@ const useOrgStore = create((set) => ({
   setEvents:        (events)     => set({ events }),
   setFunds:         (funds)      => set({ funds }),
   addFundEntry:     (entry)      => set((s) => ({ funds: [entry, ...s.funds] })),
+  updateFundEntry:  (id, amountMyr) =>
+    set((s) => ({ funds: s.funds.map(f => f.id === id ? { ...f, amountMyr } : f) })),
+  removeFundEntry:  (id) =>
+    set((s) => ({ funds: s.funds.filter(f => f.id !== id) })),
   addEvent:         (event)      => set((s) => ({ events: [event, ...s.events] })),
   updateEvent:      (eventId, patch) =>
     set((s) => ({ events: s.events.map((e) => e.id === eventId ? { ...e, ...patch } : e) })),

@@ -12,6 +12,7 @@ import {
 import {
   deleteTransaction, updateTransactionNotes,
   updateTransactionLine, deleteTransactionLine, saveTransactionLine,
+  updateFundEntry, deleteFundEntry,
 } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useAuthStore from '../../store/authStore';
@@ -163,13 +164,27 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
 export default function TransactionCard({ tx, view = 'list' }) {
   const user = useAuthStore((s) => s.user);
   const role = useOrgStore((s) => s.role);
+  const funds = useOrgStore((s) => s.funds);
   const {
     removeTransaction,
-    updateTransactionNotes: patchNotes,
-    updateTransactionLine: patchLine,
+    updateTransactionNotes:  patchNotes,
+    updateTransactionLine:   patchLine,
     removeTransactionLine,
     addTransactionLine,
+    updateFundEntry:         updateFundEntryInStore,
+    removeFundEntry:         removeFundEntryFromStore,
   } = useOrgStore();
+
+  const isImport   = tx.notes?.startsWith('Stock import');
+  const linkedFund = isImport
+    ? funds.find((f) => f.note?.includes(`[tx:${tx.id}]`))
+    : null;
+
+  async function syncFundEntry(newTotalCost) {
+    if (!linkedFund) return;
+    await updateFundEntry({ id: linkedFund.id, amountMyr: newTotalCost });
+    updateFundEntryInStore(linkedFund.id, newTotalCost);
+  }
 
   const [expanded,     setExpanded]     = useState(false);
   const [editing,      setEditing]      = useState(false);
@@ -219,6 +234,10 @@ export default function TransactionCard({ tx, view = 'list' }) {
         try {
           await deleteTransaction({ txId: tx.id, deletedById: user.dbId });
           removeTransaction(tx.id);
+          if (linkedFund) {
+            await deleteFundEntry(linkedFund.id);
+            removeFundEntryFromStore(linkedFund.id);
+          }
           notifications.show({ message: 'Transaction deleted.', color: 'red', autoClose: 2000 });
         } catch (err) {
           notifications.show({ title: 'Delete failed', message: err.message, color: 'red' });
@@ -242,6 +261,15 @@ export default function TransactionCard({ tx, view = 'list' }) {
         try {
           await deleteTransactionLine(lineId);
           removeTransactionLine(tx.id, lineId);
+          if (isImport) {
+            const deletedLine = lines.find((l) => l.id === lineId);
+            if (deletedLine?.side === 'in' && deletedLine?.type === 'card') {
+              const newTotal = lines
+                .filter((l) => l.side === 'in' && l.type === 'card' && l.id !== lineId)
+                .reduce((sum, l) => sum + (l.unitPriceMyr || 0) * l.qty, 0);
+              await syncFundEntry(newTotal);
+            }
+          }
           notifications.show({ message: 'Line removed.', color: 'orange', autoClose: 2000 });
         } catch (err) {
           notifications.show({ title: 'Failed', message: err.message, color: 'red' });
@@ -279,6 +307,16 @@ export default function TransactionCard({ tx, view = 'list' }) {
       }
 
       await Promise.all(ops);
+      if (isImport) {
+        const newTotal = lines
+          .filter((l) => l.side === 'in' && l.type === 'card')
+          .reduce((sum, l) => {
+            const price = l.id in lineEdits ? (parseFloat(lineEdits[l.id]) || 0) : (l.unitPriceMyr || 0);
+            const qty   = l.id in qtyEdits  ? (qtyEdits[l.id] >= 1 ? qtyEdits[l.id] : l.qty) : l.qty;
+            return sum + price * qty;
+          }, 0);
+        await syncFundEntry(newTotal);
+      }
       patchNotes(tx.id, notes || null);
       setLineEdits({});
       setQtyEdits({});
@@ -339,6 +377,12 @@ export default function TransactionCard({ tx, view = 'list' }) {
         marketPriceMyr: cardData.marketPriceMyr,
         priceSource:    cardData.priceSource,
       });
+      if (isImport && addCardSide === 'in') {
+        const currentCost = lines
+          .filter((l) => l.side === 'in' && l.type === 'card')
+          .reduce((sum, l) => sum + (l.unitPriceMyr || 0) * l.qty, 0);
+        await syncFundEntry(currentCost + (cardData.marketPriceMyr ?? 0));
+      }
       notifications.show({ message: 'Card added.', color: 'teal', autoClose: 2000 });
     } catch (err) {
       notifications.show({ title: 'Failed to add card', message: err.message, color: 'red' });

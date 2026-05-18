@@ -399,6 +399,22 @@ export async function createFundEntry({ orgId, amountMyr, note, createdById }) {
   return toCamel(data);
 }
 
+export async function updateFundEntry({ id, amountMyr }) {
+  const { error } = await supabase
+    .from('fund_entry')
+    .update({ amount_myr: amountMyr })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteFundEntry(id) {
+  const { error } = await supabase
+    .from('fund_entry')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 export async function getAllOrganizations() {
