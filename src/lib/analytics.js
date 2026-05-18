@@ -128,6 +128,10 @@ export function computeMetrics(transactions) {
           ev.cashIn += value;
         } else if (line.type === 'card' && line.cardExternalId) {
           cardBuyQty += line.qty;
+          if (value) {
+            cashOut    += value;
+            ev.cashOut += value;
+          }
           const id = String(line.cardExternalId);
           if (!stockMap.has(id)) stockMap.set(id, { qtyIn: 0, qtyOut: 0, costIn: 0, marketIn: 0 });
           const s = stockMap.get(id);

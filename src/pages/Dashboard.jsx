@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import {
   IconChartBar, IconTrendingUp, IconTrendingDown, IconMinus, IconPlus, IconPencil,
-  IconChevronDown, IconChevronUp, IconSearch, IconArrowUp, IconArrowDown,
+  IconChevronDown, IconChevronUp, IconSearch, IconArrowUp, IconArrowDown, IconHistory,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import useOrgStore from '../store/orgStore';
@@ -125,6 +125,49 @@ function EditEventModal({ event, onClose, onSaved }) {
           </Button>
         </Stack>
       </form>
+    </Modal>
+  );
+}
+
+// ─── Fund History modal ───────────────────────────────────────────────────────
+
+function FundHistoryModal({ opened, onClose, funds }) {
+  const total = funds.reduce((sum, f) => sum + (f.amountMyr ?? 0), 0);
+  return (
+    <Modal opened={opened} onClose={onClose} title="Fund deposit history" size="md">
+      <Stack gap="sm">
+        {funds.length === 0 ? (
+          <Text size="sm" c="dimmed" ta="center" py="md">No deposits yet.</Text>
+        ) : (
+          <>
+            {funds.map((f) => (
+              <Paper key={f.id} withBorder p="sm" radius="md">
+                <Group justify="space-between" wrap="nowrap">
+                  <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                    <Text size="xs" c="dimmed">
+                      {new Date(f.createdAt).toLocaleString(undefined, {
+                        dateStyle: 'medium', timeStyle: 'short',
+                      })}
+                      {f.createdBy?.displayName ? ` · ${f.createdBy.displayName}` : ''}
+                    </Text>
+                    {f.note && (
+                      <Text size="sm" c="dimmed" truncate>{f.note}</Text>
+                    )}
+                  </Stack>
+                  <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap' }}>
+                    +RM {(f.amountMyr ?? 0).toFixed(2)}
+                  </Text>
+                </Group>
+              </Paper>
+            ))}
+            <Divider />
+            <Group justify="space-between">
+              <Text size="sm" fw={600}>Total deposited</Text>
+              <Text size="sm" fw={700}>RM {total.toFixed(2)}</Text>
+            </Group>
+          </>
+        )}
+      </Stack>
     </Modal>
   );
 }
@@ -384,6 +427,7 @@ export default function Dashboard() {
   const user          = useAuthStore((s) => s.user);
 
   const [modalOpen,    setModalOpen]    = useState(false);
+  const [historyOpen,  setHistoryOpen]  = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
 
   const m            = useMemo(() => computeMetrics(transactions), [transactions]);
@@ -421,6 +465,11 @@ export default function Dashboard() {
           user={user}
           onAdded={addFundEntry}
         />
+        <FundHistoryModal
+          opened={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          funds={funds}
+        />
       </>
     );
   }
@@ -450,7 +499,21 @@ export default function Dashboard() {
               </Group>
               <Paper withBorder p="md" radius="md">
                 <Stack gap="xs">
-                  <MetaRow label="Funds deposited" value={rm(totalFunds)} />
+                  <Group justify="space-between">
+                    <Text size="xs" c="dimmed">Funds deposited</Text>
+                    <Group gap={4}>
+                      <Text size="xs">{rm(totalFunds)}</Text>
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="gray"
+                        onClick={() => setHistoryOpen(true)}
+                        title="View deposit history"
+                      >
+                        <IconHistory size={12} />
+                      </ActionIcon>
+                    </Group>
+                  </Group>
                   <MetaRow
                     label="Net from trades"
                     value={`${sign(m.netCash)}${rm(m.netCash)}`}
@@ -555,6 +618,11 @@ export default function Dashboard() {
         org={org}
         user={user}
         onAdded={addFundEntry}
+      />
+      <FundHistoryModal
+        opened={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        funds={funds}
       />
       {editingEvent && (
         <EditEventModal

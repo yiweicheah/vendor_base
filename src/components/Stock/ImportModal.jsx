@@ -8,7 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { IconUpload, IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokewallet';
 import { tokenize, buildQuery, buildAlternateNumberQuery } from '../../lib/tokenizer';
-import { saveTransaction, saveTransactionLine, loadTransactions } from '../../lib/db';
+import { saveTransaction, saveTransactionLine, loadTransactions, createFundEntry } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
@@ -84,9 +84,10 @@ function MatchedRow({ line }) {
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
 export default function ImportModal({ opened, onClose }) {
-  const org           = useOrgStore((s) => s.org);
+  const org             = useOrgStore((s) => s.org);
   const setTransactions = useOrgStore((s) => s.setTransactions);
-  const user          = useAuthStore((s) => s.user);
+  const addFundEntry    = useOrgStore((s) => s.addFundEntry);
+  const user            = useAuthStore((s) => s.user);
 
   const [step,       setStep]       = useState('upload');   // 'upload' | 'processing' | 'review'
   const [fileType,   setFileType]   = useState('json');     // 'json' | 'csv'
@@ -276,6 +277,17 @@ export default function ImportModal({ opened, onClose }) {
           })
         )
       );
+
+      const totalCost = matched.reduce((sum, l) => sum + (l.unitPriceMyr || 0) * l.qty, 0);
+      if (totalCost > 0) {
+        const entry = await createFundEntry({
+          orgId:       org.id,
+          amountMyr:   totalCost,
+          note:        `Auto-deposit for stock import — ${date}`,
+          createdById: user.dbId,
+        });
+        addFundEntry({ ...entry, amountMyr: totalCost });
+      }
 
       const refreshed = await loadTransactions(org.id);
       setTransactions(refreshed);
