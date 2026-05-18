@@ -18,6 +18,8 @@ const useOrgStore = create((set) => ({
   setFunds:         (funds)      => set({ funds }),
   addFundEntry:     (entry)      => set((s) => ({ funds: [entry, ...s.funds] })),
   addEvent:         (event)      => set((s) => ({ events: [event, ...s.events] })),
+  updateEvent:      (eventId, patch) =>
+    set((s) => ({ events: s.events.map((e) => e.id === eventId ? { ...e, ...patch } : e) })),
   setActiveEventId: (id)         => set({ activeEventId: id }),
 
   removeTransaction: (txId) =>

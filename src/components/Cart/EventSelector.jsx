@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconCalendarEvent, IconX, IconPlus, IconChevronDown } from '@tabler/icons-react';
+import { IconCalendarEvent, IconX, IconPlus, IconChevronDown, IconSearch } from '@tabler/icons-react';
 import { createEvent } from '../../lib/db';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
@@ -123,16 +123,23 @@ function EventPickerModal({ opened, onClose }) {
   const activeEventId   = useOrgStore((s) => s.activeEventId);
   const setActiveEventId = useOrgStore((s) => s.setActiveEventId);
   const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredEvents = search.trim()
+    ? events.filter((ev) => ev.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : events;
+
+  function handleClose() { setSearch(''); onClose(); }
 
   function select(id) {
     if (id) localStorage.setItem('selectedEventId', id);
     else localStorage.removeItem('selectedEventId');
     setActiveEventId(id);
-    onClose();
+    handleClose();
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Select event" size="sm" padding="md">
+    <Modal opened={opened} onClose={handleClose} title="Select event" size="sm" padding="md">
       <Stack gap="sm">
         {/* None option */}
         <UnstyledButton onClick={() => select(null)}>
@@ -142,10 +149,21 @@ function EventPickerModal({ opened, onClose }) {
           </Group>
         </UnstyledButton>
 
-        {events.length > 0 && <Divider />}
+        {events.length > 0 && (
+          <>
+            <Divider />
+            <TextInput
+              placeholder="Search events…"
+              leftSection={<IconSearch size={13} />}
+              value={search}
+              onChange={(e) => setSearch(e.currentTarget.value)}
+              size="sm"
+            />
+          </>
+        )}
 
         {/* Event list */}
-        {events.map((ev) => (
+        {filteredEvents.map((ev) => (
           <UnstyledButton key={ev.id} onClick={() => select(ev.id)}>
             <Group gap="sm" wrap="nowrap">
               <Radio checked={activeEventId === ev.id} onChange={() => {}} readOnly style={{ flexShrink: 0 }} />
@@ -159,6 +177,9 @@ function EventPickerModal({ opened, onClose }) {
             </Group>
           </UnstyledButton>
         ))}
+        {filteredEvents.length === 0 && search.trim() && (
+          <Text size="sm" c="dimmed">No events match.</Text>
+        )}
 
         <Divider />
 

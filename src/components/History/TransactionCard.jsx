@@ -74,6 +74,14 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
         <Stack gap={1} style={{ minWidth: 0 }}>
           <Text size="sm" fw={500} truncate>{label ?? '—'}</Text>
           {sub && <Text size="xs" c="dimmed" truncate>{sub}</Text>}
+          {line.side === 'out' && line.type === 'card' && line.avgCostMyr != null && !editing && (() => {
+            const pct = ((unitPrice - line.avgCostMyr) / line.avgCostMyr) * 100;
+            return (
+              <Text size="xs" c={pct >= 0 ? 'teal.4' : 'red.4'}>
+                Avg RM {line.avgCostMyr.toFixed(2)} · {pct >= 0 ? '+' : ''}{pct.toFixed(0)}%
+              </Text>
+            );
+          })()}
         </Stack>
       </Group>
 
@@ -580,6 +588,14 @@ export default function TransactionCard({ tx, view = 'list' }) {
                               {l.marketPriceMyr != null && (
                                 <Text size="xs" c="dimmed">Mkt RM {l.marketPriceMyr.toFixed(2)}</Text>
                               )}
+                              {l.side === 'out' && l.avgCostMyr != null && (() => {
+                                const pct = ((l.unitPriceMyr ?? 0) - l.avgCostMyr) / l.avgCostMyr * 100;
+                                return (
+                                  <Text size="xs" c={pct >= 0 ? 'teal.4' : 'red.4'}>
+                                    Avg RM {l.avgCostMyr.toFixed(2)} · {pct >= 0 ? '+' : ''}{pct.toFixed(0)}%
+                                  </Text>
+                                );
+                              })()}
                             </Stack>
                           </Stack>
                         ))}

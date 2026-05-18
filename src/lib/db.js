@@ -122,6 +122,7 @@ export async function loadTransactions(orgId) {
         transaction_lines(
           id, side, type,
           card_external_id, card_name, card_number, card_set_name, card_lang, card_image_url,
+          avg_cost_myr,
           market_price_myr, price_source,
           sealed_name, sealed_reference_price,
           qty, unit_price_myr
@@ -259,6 +260,14 @@ export async function createEvent({ orgId, name, location, startsAt, endsAt, cre
     .single();
   if (error) throw error;
   return toCamel(data);
+}
+
+export async function updateEvent({ eventId, name, location, startsAt, endsAt }) {
+  const { error } = await supabase
+    .from('event')
+    .update({ name, location: location ?? null, starts_at: startsAt ?? null, ends_at: endsAt ?? null })
+    .eq('id', eventId);
+  if (error) throw error;
 }
 
 // ─── Team / members ───────────────────────────────────────────────────────────

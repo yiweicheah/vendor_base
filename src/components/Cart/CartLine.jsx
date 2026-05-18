@@ -25,7 +25,7 @@ export default function CartLine({ line, side }) {
   const color = pctColor(pct, side);
 
   // Stock is only relevant for card lines on the OUT side
-  const stock = (side === 'out' && line.type === 'card')
+  const stock = (side === 'out' && line.type === 'card' && line.cardExternalId != null)
     ? getStock(line.cardExternalId, transactions)
     : null;
 

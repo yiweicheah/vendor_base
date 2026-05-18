@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
 import {
   Box, ScrollArea, Stack, Paper, Group, Text, Divider,
-  ThemeIcon, Center, Button, Modal, NumberInput, TextInput,
+  ThemeIcon, Center, Button, Modal, NumberInput, TextInput, ActionIcon,
+  Select, Pagination,
 } from '@mantine/core';
 import {
-  IconChartBar, IconTrendingUp, IconTrendingDown, IconMinus, IconPlus,
+  IconChartBar, IconTrendingUp, IconTrendingDown, IconMinus, IconPlus, IconPencil,
+  IconChevronDown, IconChevronUp, IconSearch,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
 import { computeMetrics } from '../lib/analytics';
-import { createFundEntry } from '../lib/db';
+import { createFundEntry, updateEvent as updateEventDb } from '../lib/db';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +52,80 @@ function SectionLabel({ children }) {
     <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
       {children}
     </Text>
+  );
+}
+
+// ─── Edit Event modal ─────────────────────────────────────────────────────────
+
+function EditEventModal({ event, onClose, onSaved }) {
+  const toDateInput = (ts) => ts ? new Date(ts).toISOString().slice(0, 10) : '';
+  const toTs        = (d)  => d  ? new Date(d).toISOString() : null;
+
+  const [name,      setName]      = useState(event?.name      ?? '');
+  const [location,  setLocation]  = useState(event?.location  ?? '');
+  const [startDate, setStartDate] = useState(() => toDateInput(event?.startsAt));
+  const [endDate,   setEndDate]   = useState(() => toDateInput(event?.endsAt));
+  const [loading,   setLoading]   = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim() || !event?.id) return;
+    setLoading(true);
+    try {
+      const patch = {
+        name:     name.trim(),
+        location: location.trim() || null,
+        startsAt: toTs(startDate),
+        endsAt:   toTs(endDate),
+      };
+      await updateEventDb({ eventId: event.id, ...patch });
+      onSaved(patch);
+      onClose();
+      notifications.show({ message: 'Event updated.', color: 'green', autoClose: 2000 });
+    } catch (err) {
+      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal opened={!!event} onClose={onClose} title="Edit event" size="sm">
+      <form onSubmit={handleSubmit}>
+        <Stack gap="sm">
+          <TextInput
+            label="Event name"
+            value={name}
+            onChange={(e) => setName(e.currentTarget.value)}
+            required
+            autoFocus
+          />
+          <TextInput
+            label="Location"
+            placeholder="KLCC Convention Centre"
+            value={location}
+            onChange={(e) => setLocation(e.currentTarget.value)}
+          />
+          <Group grow gap="sm">
+            <TextInput
+              label="Start date"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.currentTarget.value)}
+            />
+            <TextInput
+              label="End date"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.currentTarget.value)}
+            />
+          </Group>
+          <Button type="submit" loading={loading} disabled={!name.trim()} mt="xs">
+            Save
+          </Button>
+        </Stack>
+      </form>
+    </Modal>
   );
 }
 
@@ -129,6 +205,132 @@ function AddFundsModal({ opened, onClose, org, user, onAdded }) {
   );
 }
 
+// ─── By Event section ────────────────────────────────────────────────────────
+
+const EVENT_SORT_OPTIONS = [
+  { value: 'txCount', label: 'Most transactions' },
+  { value: 'netCash', label: 'Net cash' },
+  { value: 'cashIn',  label: 'Cash in' },
+  { value: 'name',    label: 'Name' },
+];
+const PAGE_SIZE = 5;
+
+function ByEventSection({ breakdown, events, canEdit, onEdit }) {
+  const [collapsed, setCollapsedRaw] = useState(
+    () => localStorage.getItem('dashboard_events_collapsed') === 'true'
+  );
+  const [sort, setSortRaw] = useState(
+    () => localStorage.getItem('dashboard_events_sort') ?? 'txCount'
+  );
+  const [search, setSearch] = useState('');
+  const [page,   setPage]   = useState(1);
+
+  function setCollapsed(v) { setCollapsedRaw(v); localStorage.setItem('dashboard_events_collapsed', String(v)); }
+  function setSort(v)      { setSortRaw(v);      localStorage.setItem('dashboard_events_sort', v); setPage(1); }
+  function handleSearch(v) { setSearch(v); setPage(1); }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return breakdown;
+    return breakdown.filter((ev) => (ev.name ?? '').toLowerCase().includes(q));
+  }, [breakdown, search]);
+
+  const sorted = useMemo(() => {
+    const copy = [...filtered];
+    if (sort === 'name')    copy.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+    if (sort === 'netCash') copy.sort((a, b) => b.netCash - a.netCash);
+    if (sort === 'cashIn')  copy.sort((a, b) => b.cashIn - a.cashIn);
+    if (sort === 'txCount') copy.sort((a, b) => b.txCount - a.txCount);
+    return copy;
+  }, [filtered, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage   = Math.min(page, totalPages);
+  const paginated  = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  return (
+    <Stack gap="sm">
+      <Group justify="space-between" align="center">
+        <Group
+          gap={4}
+          style={{ cursor: 'pointer', userSelect: 'none' }}
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          <SectionLabel>By Event</SectionLabel>
+          <ActionIcon variant="transparent" color="gray" size="xs" tabIndex={-1}>
+            {collapsed ? <IconChevronDown size={12} /> : <IconChevronUp size={12} />}
+          </ActionIcon>
+        </Group>
+        {!collapsed && (
+          <Select
+            data={EVENT_SORT_OPTIONS}
+            value={sort}
+            onChange={setSort}
+            size="xs"
+            w={160}
+            allowDeselect={false}
+          />
+        )}
+      </Group>
+
+      {!collapsed && (
+        <Stack gap="xs">
+          <TextInput
+            placeholder="Search events…"
+            leftSection={<IconSearch size={13} />}
+            value={search}
+            onChange={(e) => handleSearch(e.currentTarget.value)}
+            size="xs"
+          />
+
+          {paginated.length === 0 ? (
+            <Text size="xs" c="dimmed" ta="center" py="sm">No events match.</Text>
+          ) : (
+            paginated.map((ev) => (
+              <Paper key={ev.id} withBorder p="sm" radius="md">
+                <Stack gap="xs">
+                  <Group justify="space-between" wrap="nowrap">
+                    <Text size="sm" fw={500} truncate>{ev.name}</Text>
+                    <Group gap={4} style={{ flexShrink: 0 }}>
+                      <Text size="xs" c="dimmed">{ev.txCount} tx</Text>
+                      {canEdit && ev.id !== '__none__' && (
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size="xs"
+                          onClick={() => onEdit(events.find((e) => e.id === ev.id) ?? null)}
+                        >
+                          <IconPencil size={11} />
+                        </ActionIcon>
+                      )}
+                    </Group>
+                  </Group>
+                  <Group justify="space-between">
+                    <Text size="xs" c="dimmed">Cash in / out</Text>
+                    <Text size="xs" c="dimmed">{rm(ev.cashIn)} / {rm(ev.cashOut)}</Text>
+                  </Group>
+                  <Group justify="space-between">
+                    <Text size="xs" fw={600}>Net</Text>
+                    <Text size="xs" fw={600} c={netColor(ev.netCash)}>
+                      {sign(ev.netCash)}{rm(ev.netCash)}
+                    </Text>
+                  </Group>
+                </Stack>
+              </Paper>
+            ))
+          )}
+
+          {totalPages > 1 && (
+            <Group justify="center" mt="xs">
+              <Pagination total={totalPages} value={safePage} onChange={setPage} size="xs" />
+            </Group>
+          )}
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -136,10 +338,13 @@ export default function Dashboard() {
   const funds         = useOrgStore((s) => s.funds);
   const org           = useOrgStore((s) => s.org);
   const role          = useOrgStore((s) => s.role);
+  const events        = useOrgStore((s) => s.events);
   const addFundEntry  = useOrgStore((s) => s.addFundEntry);
+  const updateEvent   = useOrgStore((s) => s.updateEvent);
   const user          = useAuthStore((s) => s.user);
 
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOpen,    setModalOpen]    = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
 
   const m            = useMemo(() => computeMetrics(transactions), [transactions]);
   const totalFunds   = useMemo(() => funds.reduce((sum, f) => sum + (f.amountMyr ?? 0), 0), [funds]);
@@ -285,31 +490,12 @@ export default function Dashboard() {
 
             {/* ── Per-event breakdown ───────────────────────────────────────── */}
             {m.eventBreakdown.length > 0 && (
-              <Stack gap="sm">
-                <SectionLabel>By Event</SectionLabel>
-                <Stack gap="xs">
-                  {m.eventBreakdown.map((ev) => (
-                    <Paper key={ev.id} withBorder p="sm" radius="md">
-                      <Stack gap="xs">
-                        <Group justify="space-between" wrap="nowrap">
-                          <Text size="sm" fw={500} truncate>{ev.name}</Text>
-                          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>{ev.txCount} tx</Text>
-                        </Group>
-                        <Group justify="space-between">
-                          <Text size="xs" c="dimmed">Cash in / out</Text>
-                          <Text size="xs" c="dimmed">{rm(ev.cashIn)} / {rm(ev.cashOut)}</Text>
-                        </Group>
-                        <Group justify="space-between">
-                          <Text size="xs" fw={600}>Net</Text>
-                          <Text size="xs" fw={600} c={netColor(ev.netCash)}>
-                            {sign(ev.netCash)}{rm(ev.netCash)}
-                          </Text>
-                        </Group>
-                      </Stack>
-                    </Paper>
-                  ))}
-                </Stack>
-              </Stack>
+              <ByEventSection
+                breakdown={m.eventBreakdown}
+                events={events}
+                canEdit={canAddFunds}
+                onEdit={setEditingEvent}
+              />
             )}
 
           </Stack>
@@ -323,6 +509,13 @@ export default function Dashboard() {
         user={user}
         onAdded={addFundEntry}
       />
+      {editingEvent && (
+        <EditEventModal
+          event={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSaved={(patch) => updateEvent(editingEvent.id, patch)}
+        />
+      )}
     </>
   );
 }

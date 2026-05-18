@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import {
   IconArrowDown, IconArrowUp,
-  IconSearch, IconCurrencyDollar,
+  IconSearch, IconCurrencyDollar, IconStack2,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import useCartStore from '../store/cartStore';
@@ -27,7 +27,7 @@ function lineTotal(lines) {
 
 // ─── Section component ────────────────────────────────────────────────────────
 
-function CartSection({ side, lines, onAddCard, onAddCash }) {
+function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk }) {
   const isIn    = side === 'in';
   const label   = isIn ? 'COMING IN' : 'GOING OUT';
   const color   = isIn ? 'violet' : 'gray';
@@ -93,6 +93,17 @@ function CartSection({ side, lines, onAddCard, onAddCash }) {
           >
             Add card
           </Button>
+          {!isIn && (
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<IconStack2 size={13} />}
+              onClick={onAddBulk}
+            >
+              Bulk
+            </Button>
+          )}
           <Button
             variant="subtle"
             color="gray"
@@ -172,6 +183,10 @@ export default function Cart() {
     addLine(side, { type: 'cash', qty: 1, unitPrice: 0 });
   }
 
+  function handleAddBulk() {
+    addLine('out', { type: 'card', cardName: 'Bulk cards', qty: 1, unitPrice: 0 });
+  }
+
   async function handleSave() {
     if (!user?.dbId || !org?.id) return;
 
@@ -210,6 +225,7 @@ export default function Cart() {
             cardSetName:         line.setName          ?? null,
             cardLang:            line.lang             ?? null,
             cardImageUrl:        line.imageUrl         ?? null,
+            avgCostMyr:          line.avgCost          ?? null,
             marketPriceMyr:      line.marketPrice      ?? null,
             priceSource:         line.priceSource      ?? null,
             usdToMyrRate:        USD_TO_MYR,
@@ -265,6 +281,7 @@ export default function Cart() {
             lines={outLines}
             onAddCard={handleAddCard}
             onAddCash={handleAddCash}
+            onAddBulk={handleAddBulk}
           />
         </Stack>
       </ScrollArea>

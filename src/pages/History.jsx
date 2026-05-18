@@ -3,6 +3,15 @@ import {
   Box, ScrollArea, Stack, Text, Center, ThemeIcon,
   Group, ActionIcon, Select,
 } from '@mantine/core';
+
+function formatEventDates(startsAt, endsAt) {
+  if (!startsAt) return null;
+  const fmt = (ts) => new Date(ts).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
+  if (!endsAt) return fmt(startsAt);
+  const s = new Date(startsAt);
+  const e = new Date(endsAt);
+  return s.toDateString() === e.toDateString() ? fmt(startsAt) : `${fmt(startsAt)} – ${fmt(endsAt)}`;
+}
 import { IconHistory, IconLayoutList, IconLayoutGrid } from '@tabler/icons-react';
 import useOrgStore from '../store/orgStore';
 import TransactionCard from '../components/History/TransactionCard';
@@ -22,19 +31,22 @@ function maxUnitPrice(lines) {
 }
 
 export default function History() {
-  const transactions = useOrgStore((s) => s.transactions);
-  const [view, setViewRaw] = useState(() => localStorage.getItem('history_view') ?? 'list');
-  const [sort, setSortRaw] = useState(() => localStorage.getItem('history_sort') ?? 'date');
+  const transactions  = useOrgStore((s) => s.transactions);
+  const events        = useOrgStore((s) => s.events);
+  const [view, setViewRaw]          = useState(() => localStorage.getItem('history_view')         ?? 'list');
+  const [sort, setSortRaw]          = useState(() => localStorage.getItem('history_sort')         ?? 'date');
+  const [eventFilter, setFilterRaw] = useState(() => localStorage.getItem('history_event_filter') ?? 'all');
+  const [eventSearch, setEventSearch] = useState('');
 
-  function setView(v) {
-    setViewRaw(v);
-    localStorage.setItem('history_view', v);
-  }
+  function setView(v)        { setViewRaw(v);    localStorage.setItem('history_view', v); }
+  function setSort(v)        { setSortRaw(v);    localStorage.setItem('history_sort', v); }
+  function setEventFilter(v) { setFilterRaw(v);  localStorage.setItem('history_event_filter', v); }
 
-  function setSort(v) {
-    setSortRaw(v);
-    localStorage.setItem('history_sort', v);
-  }
+  const eventOptions = useMemo(() => [
+    { value: 'all',      label: 'All events' },
+    { value: '__none__', label: 'Walk-ins' },
+    ...events.map((e) => ({ value: e.id, label: e.name, startsAt: e.startsAt, endsAt: e.endsAt })),
+  ], [events]);
 
   const sorted = useMemo(() => {
     const copy = [...transactions];
@@ -56,6 +68,12 @@ export default function History() {
     return copy;
   }, [transactions, sort]);
 
+  const displayed = useMemo(() => {
+    if (eventFilter === 'all')      return sorted;
+    if (eventFilter === '__none__') return sorted.filter((tx) => tx.event == null);
+    return sorted.filter((tx) => tx.event?.id === eventFilter);
+  }, [sorted, eventFilter]);
+
   if (transactions.length === 0) {
     return (
       <Center h="100%">
@@ -75,6 +93,31 @@ export default function History() {
         <Stack gap="sm" pb="md">
 
           <Group justify="flex-end">
+            {events.length > 0 && (
+              <Select
+                data={eventOptions}
+                value={eventFilter}
+                onChange={setEventFilter}
+                size="xs"
+                w={180}
+                allowDeselect={false}
+                searchable
+                searchValue={eventSearch}
+                onSearchChange={setEventSearch}
+                onDropdownOpen={() => setEventSearch('')}
+                renderOption={({ option }) => {
+                  const date = option.startsAt
+                    ? formatEventDates(option.startsAt, option.endsAt)
+                    : null;
+                  return (
+                    <Stack gap={0}>
+                      <Text size="xs">{option.label}</Text>
+                      {date && <Text size="xs" c="dimmed">{date}</Text>}
+                    </Stack>
+                  );
+                }}
+              />
+            )}
             <Select
               data={SORT_OPTIONS}
               value={sort}
@@ -103,11 +146,17 @@ export default function History() {
             </Group>
           </Group>
 
-          <Stack gap="sm">
-            {sorted.map((tx) => (
-              <TransactionCard key={tx.id} tx={tx} view={view} />
-            ))}
-          </Stack>
+          {displayed.length === 0 ? (
+            <Center py="xl">
+              <Text c="dimmed" size="sm">No transactions for this filter</Text>
+            </Center>
+          ) : (
+            <Stack gap="sm">
+              {displayed.map((tx) => (
+                <TransactionCard key={tx.id} tx={tx} view={view} />
+              ))}
+            </Stack>
+          )}
 
         </Stack>
       </ScrollArea>
