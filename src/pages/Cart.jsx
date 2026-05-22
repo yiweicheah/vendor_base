@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Stack, Paper, Group, Text, Button, Box,
-  ThemeIcon, ScrollArea,
+  ThemeIcon, ScrollArea, Select,
 } from '@mantine/core';
 import {
   IconArrowDown, IconArrowUp,
@@ -27,7 +27,9 @@ function lineTotal(lines) {
 
 // ─── Section component ────────────────────────────────────────────────────────
 
-function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk }) {
+const PCT_OPTIONS = ['100', '95', '90', '85', '80', '75', '70', '65', '60'];
+
+function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, pct, onPctChange }) {
   const isIn    = side === 'in';
   const label   = isIn ? 'COMING IN' : 'GOING OUT';
   const color   = isIn ? 'violet' : 'gray';
@@ -61,7 +63,20 @@ function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk }) {
               {label}
             </Text>
           </Group>
-          <Text size="sm" fw={600}>RM {total.toFixed(2)}</Text>
+          <Group gap="xs" align="center">
+            {isIn && (
+              <Select
+                data={PCT_OPTIONS.map(p => ({ value: p, label: `${p}%` }))}
+                value={String(pct ?? 100)}
+                onChange={(val) => onPctChange?.(Number(val))}
+                size="xs"
+                w={72}
+                allowDeselect={false}
+                styles={{ input: { textAlign: 'center' } }}
+              />
+            )}
+            <Text size="sm" fw={600}>RM {total.toFixed(2)}</Text>
+          </Group>
         </Group>
 
         {isEmpty ? (
@@ -130,6 +145,7 @@ export default function Cart() {
   const [searchOpen,       setSearchOpen]       = useState(false);
   const [searchSide,       setSearchSide]       = useState('in');
   const [stockPickerOpen,  setStockPickerOpen]  = useState(false);
+  const [inPct,            setInPct]            = useState(100);
 
   const inTotal  = lineTotal(inLines);
   const outTotal = lineTotal(outLines);
@@ -164,6 +180,37 @@ export default function Cart() {
       }
     }
   }, [inLines, outLines, addLine, removeLine, updateLine]);
+
+  const inPctRef = useRef(inPct);
+  inPctRef.current = inPct;
+
+  const knownInLineIdsRef = useRef(new Set(inLines.map(l => l.id)));
+
+  useEffect(() => {
+    const pct = inPctRef.current;
+    const knownIds = knownInLineIdsRef.current;
+
+    const newCardLines = inLines.filter(
+      l => !knownIds.has(l.id) && l.type === 'card' && l.marketPrice != null
+    );
+
+    knownInLineIdsRef.current = new Set(inLines.map(l => l.id));
+
+    if (pct !== 100) {
+      newCardLines.forEach(line => {
+        updateLine('in', line.id, { unitPrice: +(line.marketPrice * pct / 100).toFixed(2) });
+      });
+    }
+  }, [inLines.length, updateLine]);
+
+  function handleInPctChange(pct) {
+    setInPct(pct);
+    inLines.forEach(line => {
+      if (line.type === 'card' && line.marketPrice != null) {
+        updateLine('in', line.id, { unitPrice: +(line.marketPrice * pct / 100).toFixed(2) });
+      }
+    });
+  }
 
   function handleAddCard(side) {
     if (side === 'out') {
@@ -275,6 +322,8 @@ export default function Cart() {
             lines={inLines}
             onAddCard={handleAddCard}
             onAddCash={handleAddCash}
+            pct={inPct}
+            onPctChange={handleInPctChange}
           />
           <CartSection
             side="out"
