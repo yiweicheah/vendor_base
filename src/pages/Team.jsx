@@ -2,14 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Box, ScrollArea, Stack, Text, Group, Badge,
   TextInput, Select, Button, ActionIcon, Paper,
-  Divider, Anchor, CopyButton, Tooltip,
+  Divider, Anchor, CopyButton, Tooltip, Collapse,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconCheck, IconUserPlus, IconRefresh } from '@tabler/icons-react';
+import { IconCopy, IconCheck, IconUserPlus, IconRefresh, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { getOrgMembers, getOrgInvites, createInvite, isEmailAlreadyOrgMember, hasPendingOrgInvite, regenerateInvite } from '../lib/db';
 import { sendInviteLink } from '../lib/auth';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
+import PaymentMethodSettings from '../components/Settings/PaymentMethodSettings';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -211,6 +212,8 @@ export default function Team() {
   const [invites, setInvites]   = useState([]);
   const [loadingM, setLoadingM] = useState(true);
   const [loadingI, setLoadingI] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [inviteOpen,   setInviteOpen]   = useState(false);
 
   const canInvite = role === 'owner' || role === 'admin';
 
@@ -261,26 +264,55 @@ export default function Team() {
             <>
               <Divider />
               <Stack gap="sm">
-                <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
-                  Invite someone
-                </Text>
-                <InviteForm org={org} user={user} onCreated={fetchInvites} />
+                <Group
+                  justify="space-between"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setSettingsOpen((v) => !v)}
+                >
+                  <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
+                    Settings
+                  </Text>
+                  <ActionIcon variant="subtle" color="gray" size="xs">
+                    {settingsOpen ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
+                  </ActionIcon>
+                </Group>
+                <Collapse expanded={settingsOpen}>
+                  <PaymentMethodSettings />
+                </Collapse>
               </Stack>
 
               <Divider />
               <Stack gap="sm">
-                <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
-                  Pending invites
-                </Text>
-                {loadingI ? (
-                  <Text size="xs" c="dimmed">Loading…</Text>
-                ) : invites.length === 0 ? (
-                  <Text size="xs" c="dimmed">No invites sent yet.</Text>
-                ) : (
+                <Group
+                  justify="space-between"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setInviteOpen((v) => !v)}
+                >
+                  <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
+                    Invite someone
+                  </Text>
+                  <ActionIcon variant="subtle" color="gray" size="xs">
+                    {inviteOpen ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
+                  </ActionIcon>
+                </Group>
+                <Collapse expanded={inviteOpen}>
                   <Stack gap="sm">
-                    {invites.map((inv) => <PendingInviteRow key={inv.id} invite={inv} invitedById={user.dbId} onRegenerated={fetchInvites} />)}
+                    <InviteForm org={org} user={user} onCreated={fetchInvites} />
+
+                    <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
+                      Pending invites
+                    </Text>
+                    {loadingI ? (
+                      <Text size="xs" c="dimmed">Loading…</Text>
+                    ) : invites.length === 0 ? (
+                      <Text size="xs" c="dimmed">No invites sent yet.</Text>
+                    ) : (
+                      <Stack gap="sm">
+                        {invites.map((inv) => <PendingInviteRow key={inv.id} invite={inv} invitedById={user.dbId} onRegenerated={fetchInvites} />)}
+                      </Stack>
+                    )}
                   </Stack>
-                )}
+                </Collapse>
               </Stack>
             </>
           )}

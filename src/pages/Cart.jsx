@@ -141,15 +141,25 @@ export default function Cart() {
   const { inLines, outLines, addLine, removeLine, updateLine, clearCart } = useCartStore();
   const { user }           = useAuthStore();
   const { org, activeEventId, setTransactions } = useOrgStore();
+  const paymentMethods = useOrgStore((s) => s.paymentMethods);
   const [saving,           setSaving]           = useState(false);
   const [searchOpen,       setSearchOpen]       = useState(false);
   const [searchSide,       setSearchSide]       = useState('in');
   const [stockPickerOpen,  setStockPickerOpen]  = useState(false);
   const [inPct,            setInPct]            = useState(100);
+  const [paymentMethod,    setPaymentMethod]    = useState(null);
 
-  const inTotal  = lineTotal(inLines);
-  const outTotal = lineTotal(outLines);
-  const hasLines = inLines.length > 0 || outLines.length > 0;
+  useEffect(() => {
+    if (paymentMethods.length > 0 && !paymentMethod) {
+      const cash = paymentMethods.find((m) => m.name === 'Cash');
+      setPaymentMethod(cash ? cash.name : paymentMethods[0].name);
+    }
+  }, [paymentMethods]);
+
+  const inTotal    = lineTotal(inLines);
+  const outTotal   = lineTotal(outLines);
+  const hasLines   = inLines.length > 0 || outLines.length > 0;
+  const hasCashIn  = inLines.some((l) => l.type === 'cash');
 
   useEffect(() => {
     const balanceIn  = inLines.find(l => l.isAutoBalance);
@@ -243,10 +253,11 @@ export default function Cart() {
 
       // 1. Create the transaction header
       const txResult = await saveTransaction({
-        orgId:       org.id,
-        createdById: user.dbId,
-        notes:       null,
-        eventId:     activeEventId ?? null,
+        orgId:         org.id,
+        createdById:   user.dbId,
+        notes:         null,
+        eventId:       activeEventId ?? null,
+        paymentMethod: paymentMethod ?? null,
       });
 
       const txId = txResult;
@@ -290,6 +301,7 @@ export default function Cart() {
         autoClose: 2000,
       });
       clearCart();
+      setPaymentMethod(null);
       const refreshed = await loadTransactions(org.id);
       setTransactions(refreshed);
 
@@ -341,6 +353,9 @@ export default function Cart() {
         onSave={handleSave}
         saving={saving}
         hasLines={hasLines}
+        hasCashIn={hasCashIn}
+        paymentMethod={paymentMethod}
+        onPaymentMethodChange={setPaymentMethod}
       />
 
       <SearchModal

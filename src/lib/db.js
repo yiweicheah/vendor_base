@@ -117,6 +117,7 @@ export async function loadTransactions(orgId) {
         id,
         created_at,
         notes,
+        payment_method,
         created_by:user!created_by_id(display_name),
         event:event!event_id(id, name),
         transaction_lines(
@@ -141,10 +142,16 @@ export async function loadTransactions(orgId) {
   }
 }
 
-export async function saveTransaction({ orgId, createdById, notes, eventId }) {
+export async function saveTransaction({ orgId, createdById, notes, eventId, paymentMethod }) {
   const { data, error } = await supabase
     .from('transaction')
-    .insert({ org_id: orgId, created_by_id: createdById, notes: notes ?? null, event_id: eventId ?? null })
+    .insert({
+      org_id:         orgId,
+      created_by_id:  createdById,
+      notes:          notes ?? null,
+      event_id:       eventId ?? null,
+      payment_method: paymentMethod ?? null,
+    })
     .select('id')
     .single();
   if (error) throw error;
@@ -179,6 +186,44 @@ export async function updateTransactionEvent({ txId, eventId }) {
     .from('transaction')
     .update({ event_id: eventId ?? null })
     .eq('id', txId);
+  if (error) throw error;
+}
+
+export async function updateTransactionPaymentMethod({ txId, paymentMethod }) {
+  const { error } = await supabase
+    .from('transaction')
+    .update({ payment_method: paymentMethod ?? null })
+    .eq('id', txId);
+  if (error) throw error;
+}
+
+// ─── Payment methods ──────────────────────────────────────────────────────────
+
+export async function loadPaymentMethods(orgId) {
+  const { data, error } = await supabase
+    .from('payment_method')
+    .select('id, name, created_at')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
+export async function createPaymentMethod({ orgId, name }) {
+  const { data, error } = await supabase
+    .from('payment_method')
+    .insert({ org_id: orgId, name })
+    .select('id, name, created_at')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
+
+export async function deletePaymentMethod(id) {
+  const { error } = await supabase
+    .from('payment_method')
+    .delete()
+    .eq('id', id);
   if (error) throw error;
 }
 
@@ -454,5 +499,7 @@ export async function createOrganization({ name, slug }) {
     .select('id')
     .single();
   if (error) throw error;
-  return toCamel(data);
+  const org = toCamel(data);
+  await supabase.from('payment_method').insert({ org_id: org.id, name: 'Cash' });
+  return org;
 }

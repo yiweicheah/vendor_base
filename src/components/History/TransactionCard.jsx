@@ -13,6 +13,7 @@ import {
   deleteTransaction, updateTransactionNotes,
   updateTransactionLine, deleteTransactionLine, saveTransactionLine,
   updateFundEntry, deleteFundEntry, updateTransactionEvent,
+  updateTransactionPaymentMethod,
 } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useAuthStore from '../../store/authStore';
@@ -167,19 +168,21 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function TransactionCard({ tx, view = 'list' }) {
-  const user = useAuthStore((s) => s.user);
-  const role = useOrgStore((s) => s.role);
-  const funds = useOrgStore((s) => s.funds);
-  const events = useOrgStore((s) => s.events);
+  const user           = useAuthStore((s) => s.user);
+  const role           = useOrgStore((s) => s.role);
+  const funds          = useOrgStore((s) => s.funds);
+  const events         = useOrgStore((s) => s.events);
+  const paymentMethods = useOrgStore((s) => s.paymentMethods);
   const {
     removeTransaction,
-    updateTransactionNotes:   patchNotes,
-    updateTransactionLine:    patchLine,
+    updateTransactionNotes:          patchNotes,
+    updateTransactionLine:           patchLine,
     removeTransactionLine,
     addTransactionLine,
-    updateTransactionEvent:   patchEvent,
-    updateFundEntry:          updateFundEntryInStore,
-    removeFundEntry:          removeFundEntryFromStore,
+    updateTransactionEvent:          patchEvent,
+    updateTransactionPaymentMethod:  patchPaymentMethod,
+    updateFundEntry:                 updateFundEntryInStore,
+    removeFundEntry:                 removeFundEntryFromStore,
   } = useOrgStore();
 
   const isImport   = tx.notes?.startsWith('Stock import');
@@ -193,10 +196,11 @@ export default function TransactionCard({ tx, view = 'list' }) {
     updateFundEntryInStore(linkedFund.id, newTotalCost);
   }
 
-  const [expanded,     setExpanded]     = useState(false);
-  const [editing,      setEditing]      = useState(false);
-  const [notes,        setNotes]        = useState(tx.notes ?? '');
-  const [editEventId,  setEditEventId]  = useState(tx.event?.id ?? null);
+  const [expanded,          setExpanded]          = useState(false);
+  const [editing,           setEditing]           = useState(false);
+  const [notes,             setNotes]             = useState(tx.notes ?? '');
+  const [editEventId,       setEditEventId]       = useState(tx.event?.id ?? null);
+  const [editPaymentMethod, setEditPaymentMethod] = useState(tx.paymentMethod ?? null);
   const [lineEdits,    setLineEdits]    = useState({});
   const [qtyEdits,     setQtyEdits]     = useState({});
   const [savingN,      setSavingN]      = useState(false);
@@ -211,7 +215,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
   const lines     = tx.transactionLines ?? [];
   const inLines   = lines.filter((l) => l.side === 'in');
   const outLines  = lines.filter((l) => l.side === 'out');
-  const type      = classifyTransaction(lines);
+  const type      = isImport ? 'BUY' : classifyTransaction(lines);
   const inTotal   = lineTotal(inLines);
   const outTotal  = lineTotal(outLines);
 
@@ -300,6 +304,14 @@ export default function TransactionCard({ tx, view = 'list' }) {
         ops.push(updateTransactionEvent({ txId: tx.id, eventId: editEventId }));
       }
 
+      const currentPaymentMethod = tx.paymentMethod ?? null;
+      if (editPaymentMethod !== currentPaymentMethod) {
+        ops.push(
+          updateTransactionPaymentMethod({ txId: tx.id, paymentMethod: editPaymentMethod })
+            .then(() => patchPaymentMethod(tx.id, editPaymentMethod))
+        );
+      }
+
       const editedLineIds = new Set([...Object.keys(lineEdits), ...Object.keys(qtyEdits)]);
       for (const lineId of editedLineIds) {
         const patch = {};
@@ -351,6 +363,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
   function handleCancelEdit() {
     setNotes(tx.notes ?? '');
     setEditEventId(tx.event?.id ?? null);
+    setEditPaymentMethod(tx.paymentMethod ?? null);
     setLineEdits({});
     setQtyEdits({});
     setEditing(false);
@@ -511,6 +524,17 @@ export default function TransactionCard({ tx, view = 'list' }) {
               allowDeselect={false}
             />
           )}
+          {paymentMethods.length > 0 && (
+            <Select
+              label={<Text size="xs" c="dimmed">Payment method</Text>}
+              placeholder="Not specified"
+              data={paymentMethods.map((m) => ({ value: m.name, label: m.name }))}
+              value={editPaymentMethod}
+              onChange={setEditPaymentMethod}
+              size="xs"
+              clearable
+            />
+          )}
           <Textarea
             placeholder="Add a note…"
             value={notes}
@@ -555,15 +579,24 @@ export default function TransactionCard({ tx, view = 'list' }) {
                 {tx.event.name}
               </Badge>
             )}
+            {tx.paymentMethod && (
+              <Badge color="cyan" variant="light" size="sm" style={{ flexShrink: 0 }}>
+                {tx.paymentMethod}
+              </Badge>
+            )}
           </Group>
           <Text size="xs" c="dimmed" truncate>
             {summaryParts.join(' · ')}{creator ? ` · ${creator}` : ''}
           </Text>
           <Text size="xs" c="dimmed">{formatDate(tx.createdAt)}</Text>
           <Group gap="xs" wrap="wrap" mt={2}>
-            <Text size="xs" c="dimmed">Sales {rm(m.sales)}</Text>
-            <Text size="xs" c="dimmed">·</Text>
-            <Text size="xs" c="dimmed">Purchases −{rm(m.purchases)}</Text>
+            {!isImport && (
+              <>
+                <Text size="xs" c="dimmed">Sales {rm(m.sales)}</Text>
+                <Text size="xs" c="dimmed">·</Text>
+              </>
+            )}
+            <Text size="xs" c="dimmed">Purchased −{rm(isImport ? inTotal : m.purchases)}</Text>
             {m.cardSoldTotal > 0 && (
               <>
                 <Text size="xs" c="dimmed">·</Text>

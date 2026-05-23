@@ -4,7 +4,7 @@ import { Center, Loader } from '@mantine/core';
 import { supabase } from './lib/supabase';
 import useAuthStore from './store/authStore';
 import useOrgStore from './store/orgStore';
-import { resolveUser, loadAllMemberships, loadTransactions, loadEvents, loadFunds } from './lib/db';
+import { resolveUser, loadAllMemberships, loadTransactions, loadEvents, loadFunds, loadPaymentMethods } from './lib/db';
 import { fetchExchangeRates } from './lib/exchangeRates';
 import { isSuperuserUid } from './lib/superuser';
 import AuthGuard from './components/AuthGuard';
@@ -43,7 +43,7 @@ export default function App() {
   const {
     org, memberships,
     setMembership, setMemberships, clearOrgData,
-    setTransactions, setEvents, setFunds, setActiveEventId,
+    setTransactions, setEvents, setFunds, setPaymentMethods, setActiveEventId,
     clearOrg,
   } = useOrgStore();
 
@@ -102,10 +102,12 @@ export default function App() {
             loadTransactions(initialMembership.org.id),
             loadEvents(initialMembership.org.id),
             loadFunds(initialMembership.org.id),
-          ]).then(([txs, events, funds]) => {
+            loadPaymentMethods(initialMembership.org.id),
+          ]).then(([txs, events, funds, paymentMethods]) => {
             setTransactions(txs);
             setEvents(events);
             setFunds(funds);
+            setPaymentMethods(paymentMethods);
             const savedEventId = localStorage.getItem('selectedEventId');
             if (savedEventId && events.some((e) => e.id === savedEventId)) {
               setActiveEventId(savedEventId);
@@ -147,14 +149,16 @@ export default function App() {
     clearOrgData();
     setSwitchingOrg(true);
     try {
-      const [txs, events, funds] = await Promise.all([
+      const [txs, events, funds, paymentMethods] = await Promise.all([
         loadTransactions(orgId),
         loadEvents(orgId),
         loadFunds(orgId),
+        loadPaymentMethods(orgId),
       ]);
       setTransactions(txs);
       setEvents(events);
       setFunds(funds);
+      setPaymentMethods(paymentMethods);
     } finally {
       setSwitchingOrg(false);
     }

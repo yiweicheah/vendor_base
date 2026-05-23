@@ -7,12 +7,13 @@ import {
 import {
   IconChartBar, IconTrendingUp, IconTrendingDown, IconMinus, IconPlus, IconPencil,
   IconChevronDown, IconChevronUp, IconSearch, IconArrowUp, IconArrowDown, IconHistory,
+  IconCheck, IconX,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
 import { computeMetrics } from '../lib/analytics';
-import { createFundEntry, updateEvent as updateEventDb } from '../lib/db';
+import { createFundEntry, updateFundEntry, updateEvent as updateEventDb } from '../lib/db';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -132,7 +133,42 @@ function EditEventModal({ event, onClose, onSaved }) {
 // ─── Fund History modal ───────────────────────────────────────────────────────
 
 function FundHistoryModal({ opened, onClose, funds }) {
+  const role = useOrgStore((s) => s.role);
+  const updateFundEntryInStore = useOrgStore((s) => s.updateFundEntry);
+  const canEdit = role === 'owner' || role === 'admin';
+
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState('');
+  const [saving, setSaving] = useState(false);
+
   const total = funds.reduce((sum, f) => sum + (f.amountMyr ?? 0), 0);
+
+  function startEdit(f) {
+    setEditingId(f.id);
+    setEditValue(f.amountMyr ?? 0);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditValue('');
+  }
+
+  async function handleSave(id) {
+    const amt = typeof editValue === 'number' ? editValue : parseFloat(editValue);
+    if (!amt || amt <= 0) return;
+    setSaving(true);
+    try {
+      await updateFundEntry({ id, amountMyr: amt });
+      updateFundEntryInStore(id, amt);
+      setEditingId(null);
+      notifications.show({ message: `Amount updated to RM ${amt.toFixed(2)}.`, color: 'green', autoClose: 2000 });
+    } catch (err) {
+      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Modal opened={opened} onClose={onClose} title="Fund deposit history" size="md">
       <Stack gap="sm">
@@ -154,9 +190,39 @@ function FundHistoryModal({ opened, onClose, funds }) {
                       <Text size="sm" c="dimmed" truncate>{f.note}</Text>
                     )}
                   </Stack>
-                  <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap' }}>
-                    +RM {(f.amountMyr ?? 0).toFixed(2)}
-                  </Text>
+                  {editingId === f.id ? (
+                    <Group gap={4} wrap="nowrap">
+                      <NumberInput
+                        value={editValue}
+                        onChange={setEditValue}
+                        decimalScale={2}
+                        fixedDecimalScale
+                        min={0.01}
+                        hideControls
+                        size="xs"
+                        style={{ width: 90 }}
+                        leftSection={<Text size="xs" c="dimmed">RM</Text>}
+                        autoFocus
+                      />
+                      <ActionIcon size="sm" color="green" loading={saving} onClick={() => handleSave(f.id)}>
+                        <IconCheck size={14} />
+                      </ActionIcon>
+                      <ActionIcon size="sm" variant="subtle" color="gray" onClick={cancelEdit} disabled={saving}>
+                        <IconX size={14} />
+                      </ActionIcon>
+                    </Group>
+                  ) : (
+                    <Group gap={4} wrap="nowrap">
+                      <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap' }}>
+                        +RM {(f.amountMyr ?? 0).toFixed(2)}
+                      </Text>
+                      {canEdit && (
+                        <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => startEdit(f)}>
+                          <IconPencil size={12} />
+                        </ActionIcon>
+                      )}
+                    </Group>
+                  )}
                 </Group>
               </Paper>
             ))}

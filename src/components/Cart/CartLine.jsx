@@ -71,7 +71,7 @@ export default function CartLine({ line, side }) {
           <Group gap="xs" wrap="nowrap">
             <NumberInput
               value={line.unitPrice ?? ''}
-              onChange={(val) => { if (typeof val === 'number') updateLine(side, line.id, { unitPrice: val }); }}
+              onChange={(val) => { const price = typeof val === 'number' ? val : parseFloat(val); if (!isNaN(price)) updateLine(side, line.id, { unitPrice: price }); }}
               onBlur={(e) => { const v = parseFloat(e.currentTarget.value); updateLine(side, line.id, { unitPrice: isNaN(v) ? 0 : v }); }}
               leftSection={<Text size="xs" c="dimmed">RM</Text>}
               decimalScale={2}
@@ -183,7 +183,7 @@ export default function CartLine({ line, side }) {
             <Text size="xs" c="dimmed" fw={500}>Unit Price</Text>
             <NumberInput
               value={line.unitPrice ?? ''}
-              onChange={(val) => { if (typeof val === 'number') updateLine(side, line.id, { unitPrice: val }); }}
+              onChange={(val) => { const price = typeof val === 'number' ? val : parseFloat(val); if (!isNaN(price)) updateLine(side, line.id, { unitPrice: price }); }}
               onBlur={(e) => { const v = parseFloat(e.currentTarget.value); updateLine(side, line.id, { unitPrice: isNaN(v) ? 0 : v }); }}
               leftSection={<Text size="xs" c="dimmed">RM</Text>}
               decimalScale={2}

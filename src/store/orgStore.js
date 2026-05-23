@@ -7,6 +7,7 @@ const useOrgStore = create((set) => ({
   transactions:    [],
   events:          [],
   funds:           [],
+  paymentMethods:  [],
   activeEventId:   null,
   loading:         false,
   error:           null,
@@ -16,6 +17,9 @@ const useOrgStore = create((set) => ({
   setTransactions:  (txs)        => set({ transactions: txs }),
   setEvents:        (events)     => set({ events }),
   setFunds:         (funds)      => set({ funds }),
+  setPaymentMethods: (methods)   => set({ paymentMethods: methods }),
+  addPaymentMethod:  (method)    => set((s) => ({ paymentMethods: [...s.paymentMethods, method] })),
+  removePaymentMethod: (id)      => set((s) => ({ paymentMethods: s.paymentMethods.filter((m) => m.id !== id) })),
   addFundEntry:     (entry)      => set((s) => ({ funds: [entry, ...s.funds] })),
   updateFundEntry:  (id, amountMyr) =>
     set((s) => ({ funds: s.funds.map(f => f.id === id ? { ...f, amountMyr } : f) })),
@@ -40,6 +44,13 @@ const useOrgStore = create((set) => ({
     set((s) => ({
       transactions: s.transactions.map((t) =>
         t.id === txId ? { ...t, event } : t
+      ),
+    })),
+
+  updateTransactionPaymentMethod: (txId, paymentMethod) =>
+    set((s) => ({
+      transactions: s.transactions.map((t) =>
+        t.id === txId ? { ...t, paymentMethod } : t
       ),
     })),
 
@@ -75,11 +86,11 @@ const useOrgStore = create((set) => ({
       ),
     })),
 
-  clearOrgData: () => set({ transactions: [], events: [], funds: [], activeEventId: null }),
+  clearOrgData: () => set({ transactions: [], events: [], funds: [], paymentMethods: [], activeEventId: null }),
 
   clearOrg: () => set({
     org: null, role: null, memberships: [], transactions: [], events: [], funds: [],
-    activeEventId: null,
+    paymentMethods: [], activeEventId: null,
   }),
   setLoading: (loading) => set({ loading }),
   setError:   (error)   => set({ error }),
