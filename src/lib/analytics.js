@@ -143,17 +143,22 @@ export function computeMetrics(transactions) {
         if (line.type === 'cash') {
           cashOut   += value;
           ev.cashOut += value;
-        } else if (line.type === 'card' && line.cardExternalId) {
-          cardSellQty += line.qty;
-          const id = String(line.cardExternalId);
-          if (!stockMap.has(id)) stockMap.set(id, { qtyIn: 0, qtyOut: 0, costIn: 0, marketIn: 0 });
-          stockMap.get(id).qtyOut += line.qty;
+        } else if (line.type === 'card') {
+          if (line.cardExternalId) {
+            cardSellQty += line.qty;
+            const id = String(line.cardExternalId);
+            if (!stockMap.has(id)) stockMap.set(id, { qtyIn: 0, qtyOut: 0, costIn: 0, marketIn: 0 });
+            stockMap.get(id).qtyOut += line.qty;
+          }
           ev.cardSoldTotal += line.qty;
           cardSoldTotal    += line.qty;
-          if (line.avgCostMyr != null) {
-            ev.grossProfit      += ((line.unitPriceMyr || 0) - line.avgCostMyr) * line.qty;
+          const effectiveCost = line.cardExternalId == null
+            ? (line.avgCostMyr ?? 0)
+            : line.avgCostMyr;
+          if (effectiveCost != null) {
+            ev.grossProfit      += ((line.unitPriceMyr || 0) - effectiveCost) * line.qty;
             ev.cardSoldWithCost += line.qty;
-            grossProfit         += ((line.unitPriceMyr || 0) - line.avgCostMyr) * line.qty;
+            grossProfit         += ((line.unitPriceMyr || 0) - effectiveCost) * line.qty;
             cardSoldWithCost    += line.qty;
           }
         }

@@ -58,11 +58,16 @@ function txMetrics(lines) {
                          .reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
   const purchases = lines.filter((l) => l.side === 'out' && l.type === 'cash')
                          .reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
-  const cardOut   = lines.filter((l) => l.side === 'out' && l.type === 'card' && l.cardExternalId);
+  const cardOut          = lines.filter((l) => l.side === 'out' && l.type === 'card');
   const cardSoldTotal    = cardOut.reduce((s, l) => s + l.qty, 0);
-  const cardSoldWithCost = cardOut.filter((l) => l.avgCostMyr != null).reduce((s, l) => s + l.qty, 0);
-  const grossProfit      = cardOut.filter((l) => l.avgCostMyr != null)
-                                  .reduce((s, l) => s + ((l.unitPriceMyr || 0) - l.avgCostMyr) * l.qty, 0);
+  const cardSoldWithCost = cardOut.reduce((s, l) => {
+    const effectiveCost = l.cardExternalId == null ? (l.avgCostMyr ?? 0) : l.avgCostMyr;
+    return effectiveCost != null ? s + l.qty : s;
+  }, 0);
+  const grossProfit = cardOut.reduce((s, l) => {
+    const effectiveCost = l.cardExternalId == null ? (l.avgCostMyr ?? 0) : l.avgCostMyr;
+    return effectiveCost != null ? s + ((l.unitPriceMyr || 0) - effectiveCost) * l.qty : s;
+  }, 0);
   return {
     sales,
     purchases,
