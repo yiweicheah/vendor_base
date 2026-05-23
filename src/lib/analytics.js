@@ -128,7 +128,8 @@ export function computeMetrics(transactions) {
           ev.cashIn += value;
         } else if (line.type === 'card' && line.cardExternalId) {
           cardBuyQty += line.qty;
-          if (value) {
+          const isImport = tx.notes?.startsWith('Stock import');
+          if (value && isImport) {
             cashOut    += value;
             ev.cashOut += value;
           }

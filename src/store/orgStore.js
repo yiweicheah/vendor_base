@@ -36,6 +36,13 @@ const useOrgStore = create((set) => ({
       ),
     })),
 
+  updateTransactionEvent: (txId, event) =>
+    set((s) => ({
+      transactions: s.transactions.map((t) =>
+        t.id === txId ? { ...t, event } : t
+      ),
+    })),
+
   updateTransactionLine: (txId, lineId, patch) =>
     set((s) => ({
       transactions: s.transactions.map((t) =>

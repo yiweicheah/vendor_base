@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Paper, Group, Stack, Text, Badge, ActionIcon,
-  Divider, Box, Image, Collapse, Textarea, Button, TextInput, NumberInput, SimpleGrid,
+  Divider, Box, Image, Collapse, Textarea, Button, TextInput, NumberInput, SimpleGrid, Select,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -12,7 +12,7 @@ import {
 import {
   deleteTransaction, updateTransactionNotes,
   updateTransactionLine, deleteTransactionLine, saveTransactionLine,
-  updateFundEntry, deleteFundEntry,
+  updateFundEntry, deleteFundEntry, updateTransactionEvent,
 } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useAuthStore from '../../store/authStore';
@@ -170,14 +170,16 @@ export default function TransactionCard({ tx, view = 'list' }) {
   const user = useAuthStore((s) => s.user);
   const role = useOrgStore((s) => s.role);
   const funds = useOrgStore((s) => s.funds);
+  const events = useOrgStore((s) => s.events);
   const {
     removeTransaction,
-    updateTransactionNotes:  patchNotes,
-    updateTransactionLine:   patchLine,
+    updateTransactionNotes:   patchNotes,
+    updateTransactionLine:    patchLine,
     removeTransactionLine,
     addTransactionLine,
-    updateFundEntry:         updateFundEntryInStore,
-    removeFundEntry:         removeFundEntryFromStore,
+    updateTransactionEvent:   patchEvent,
+    updateFundEntry:          updateFundEntryInStore,
+    removeFundEntry:          removeFundEntryFromStore,
   } = useOrgStore();
 
   const isImport   = tx.notes?.startsWith('Stock import');
@@ -194,6 +196,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
   const [expanded,     setExpanded]     = useState(false);
   const [editing,      setEditing]      = useState(false);
   const [notes,        setNotes]        = useState(tx.notes ?? '');
+  const [editEventId,  setEditEventId]  = useState(tx.event?.id ?? null);
   const [lineEdits,    setLineEdits]    = useState({});
   const [qtyEdits,     setQtyEdits]     = useState({});
   const [savingN,      setSavingN]      = useState(false);
@@ -292,6 +295,11 @@ export default function TransactionCard({ tx, view = 'list' }) {
     try {
       const ops = [updateTransactionNotes({ txId: tx.id, notes: notes || null })];
 
+      const currentEventId = tx.event?.id ?? null;
+      if (editEventId !== currentEventId) {
+        ops.push(updateTransactionEvent({ txId: tx.id, eventId: editEventId }));
+      }
+
       const editedLineIds = new Set([...Object.keys(lineEdits), ...Object.keys(qtyEdits)]);
       for (const lineId of editedLineIds) {
         const patch = {};
@@ -323,6 +331,12 @@ export default function TransactionCard({ tx, view = 'list' }) {
         await syncFundEntry(newTotal);
       }
       patchNotes(tx.id, notes || null);
+      if (editEventId !== currentEventId) {
+        const newEvent = editEventId
+          ? (events.find((e) => e.id === editEventId) ?? null)
+          : null;
+        patchEvent(tx.id, newEvent ? { id: newEvent.id, name: newEvent.name } : null);
+      }
       setLineEdits({});
       setQtyEdits({});
       setEditing(false);
@@ -336,6 +350,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
 
   function handleCancelEdit() {
     setNotes(tx.notes ?? '');
+    setEditEventId(tx.event?.id ?? null);
     setLineEdits({});
     setQtyEdits({});
     setEditing(false);
@@ -478,10 +493,24 @@ export default function TransactionCard({ tx, view = 'list' }) {
         </>
       ) : null;
     }
+    const eventOptions = [
+      { value: '__none__', label: 'No event (walk-in)' },
+      ...events.map((e) => ({ value: e.id, label: e.name })),
+    ];
     return (
       <>
         <Divider my="sm" variant="dashed" />
         <Stack gap="xs">
+          {events.length > 0 && (
+            <Select
+              label={<Text size="xs" c="dimmed">Event</Text>}
+              data={eventOptions}
+              value={editEventId ?? '__none__'}
+              onChange={(v) => setEditEventId(v === '__none__' ? null : v)}
+              size="xs"
+              allowDeselect={false}
+            />
+          )}
           <Textarea
             placeholder="Add a note…"
             value={notes}
@@ -489,7 +518,6 @@ export default function TransactionCard({ tx, view = 'list' }) {
             size="xs"
             autosize
             minRows={2}
-            autoFocus
           />
           <Group gap="xs">
             <Button size="xs" loading={savingN} leftSection={<IconCheck size={12} />} onClick={handleSave}>
@@ -522,6 +550,11 @@ export default function TransactionCard({ tx, view = 'list' }) {
               {type}
             </Badge>
             <Text size="sm" fw={600} truncate>RM {displayTotal.toFixed(2)}</Text>
+            {tx.event && (
+              <Badge color="orange" variant="dot" size="sm" style={{ flexShrink: 0 }}>
+                {tx.event.name}
+              </Badge>
+            )}
           </Group>
           <Text size="xs" c="dimmed" truncate>
             {summaryParts.join(' · ')}{creator ? ` · ${creator}` : ''}

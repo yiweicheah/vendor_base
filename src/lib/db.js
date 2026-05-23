@@ -174,6 +174,14 @@ export async function updateTransactionNotes({ txId, notes }) {
   if (error) throw error;
 }
 
+export async function updateTransactionEvent({ txId, eventId }) {
+  const { error } = await supabase
+    .from('transaction')
+    .update({ event_id: eventId ?? null })
+    .eq('id', txId);
+  if (error) throw error;
+}
+
 export async function updateTransactionLine({ lineId, unitPriceMyr, qty }) {
   const updates = {};
   if (unitPriceMyr !== undefined) updates.unit_price_myr = unitPriceMyr;
