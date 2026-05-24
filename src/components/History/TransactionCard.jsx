@@ -115,6 +115,19 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
               </Text>
             );
           })()}
+          {!editing && isCard && line.marketPriceMyr != null && (() => {
+            const pct = line.marketPriceMyr > 0
+              ? ((unitPrice - line.marketPriceMyr) / line.marketPriceMyr) * 100
+              : null;
+            const favorable = line.side === 'in' ? pct < -0.5 : pct > 0.5;
+            const color = pct == null || Math.abs(pct) < 0.5 ? 'dimmed' : favorable ? 'teal.4' : 'red.4';
+            return (
+              <Text size="xs" c={color}>
+                Mkt RM {line.marketPriceMyr.toFixed(2)}
+                {pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
+              </Text>
+            );
+          })()}
         </Stack>
       </Group>
 
@@ -185,7 +198,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
     removeFundEntry:                 removeFundEntryFromStore,
   } = useOrgStore();
 
-  const isImport   = tx.notes?.startsWith('Stock import');
+  const isImport   = tx.notes?.startsWith('Stock import') || tx.notes?.startsWith('Stock addition');
   const linkedFund = isImport
     ? funds.find((f) => f.note?.includes(`[tx:${tx.id}]`))
     : null;
@@ -743,9 +756,19 @@ export default function TransactionCard({ tx, view = 'list' }) {
                               ) : (
                                 <Text size="xs">RM {(l.unitPriceMyr ?? 0).toFixed(2)}</Text>
                               )}
-                              {l.marketPriceMyr != null && (
-                                <Text size="xs" c="dimmed">Mkt RM {l.marketPriceMyr.toFixed(2)}</Text>
-                              )}
+                              {l.marketPriceMyr != null && (() => {
+                                const pct = l.marketPriceMyr > 0
+                                  ? ((l.unitPriceMyr ?? 0) - l.marketPriceMyr) / l.marketPriceMyr * 100
+                                  : null;
+                                const favorable = l.side === 'in' ? pct < -0.5 : pct > 0.5;
+                                const color = pct == null || Math.abs(pct) < 0.5 ? 'dimmed' : favorable ? 'teal.4' : 'red.4';
+                                return (
+                                  <Text size="xs" c={color}>
+                                    Mkt RM {l.marketPriceMyr.toFixed(2)}
+                                    {pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
+                                  </Text>
+                                );
+                              })()}
                               {l.side === 'out' && l.avgCostMyr != null && (() => {
                                 const pct = l.avgCostMyr > 0
                                   ? ((l.unitPriceMyr ?? 0) - l.avgCostMyr) / l.avgCostMyr * 100

@@ -318,6 +318,18 @@ export async function createEvent({ orgId, name, location, startsAt, endsAt, cre
   return toCamel(data);
 }
 
+export async function getOrCreateImportEvent({ orgId, createdById, existingEvents }) {
+  const existing = existingEvents.find((e) => e.name === 'Import');
+  if (existing) return existing;
+  const { data, error } = await supabase
+    .from('event')
+    .insert({ org_id: orgId, name: 'Import', created_by_id: createdById })
+    .select('id, name, location, starts_at, ends_at')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
+
 export async function updateEvent({ eventId, name, location, startsAt, endsAt }) {
   const { error } = await supabase
     .from('event')

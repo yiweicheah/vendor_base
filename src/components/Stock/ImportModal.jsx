@@ -8,7 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { IconUpload, IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokewallet';
 import { tokenize, buildQuery, buildAlternateNumberQuery } from '../../lib/tokenizer';
-import { saveTransaction, saveTransactionLine, loadTransactions, createFundEntry } from '../../lib/db';
+import { saveTransaction, saveTransactionLine, loadTransactions, createFundEntry, getOrCreateImportEvent } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
@@ -85,6 +85,8 @@ function MatchedRow({ line }) {
 
 export default function ImportModal({ opened, onClose }) {
   const org             = useOrgStore((s) => s.org);
+  const events          = useOrgStore((s) => s.events);
+  const addEvent        = useOrgStore((s) => s.addEvent);
   const setTransactions = useOrgStore((s) => s.setTransactions);
   const addFundEntry    = useOrgStore((s) => s.addFundEntry);
   const user            = useAuthStore((s) => s.user);
@@ -246,11 +248,14 @@ export default function ImportModal({ opened, onClose }) {
       const date = new Date().toLocaleDateString('en-MY', {
         day: 'numeric', month: 'short', year: 'numeric',
       });
+      const importEvent = await getOrCreateImportEvent({ orgId: org.id, createdById: user.dbId, existingEvents: events });
+      if (!events.find((e) => e.id === importEvent.id)) addEvent(importEvent);
+
       const txId = await saveTransaction({
         orgId:       org.id,
         createdById: user.dbId,
         notes:       `Stock import — ${date}`,
-        eventId:     null,
+        eventId:     importEvent.id,
       });
 
       await Promise.all(

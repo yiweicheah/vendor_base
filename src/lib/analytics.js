@@ -136,7 +136,7 @@ export function computeMetrics(transactions) {
           ev.cashIn += value;
         } else if (line.type === 'card' && line.cardExternalId) {
           cardBuyQty += line.qty;
-          const isImport = tx.notes?.startsWith('Stock import');
+          const isImport = tx.notes?.startsWith('Stock import') || tx.notes?.startsWith('Stock addition');
           if (value && isImport) {
             cashOut    += value;
             ev.cashOut += value;

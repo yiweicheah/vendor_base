@@ -4,12 +4,13 @@ import {
   TextInput, Select, Image, Center, ThemeIcon, Button,
   ActionIcon, Pagination,
 } from '@mantine/core';
-import { IconSearch, IconPackage, IconUpload, IconLayoutList, IconLayoutGrid, IconRefresh } from '@tabler/icons-react';
+import { IconSearch, IconPackage, IconUpload, IconLayoutList, IconLayoutGrid, IconRefresh, IconPlus } from '@tabler/icons-react';
 import { computeStockItems } from '../lib/analytics';
 import { normalizeStr } from '../lib/tokenizer';
 import { refreshStaleCardPrices } from '../lib/priceRefresh';
 import useOrgStore from '../store/orgStore';
 import ImportModal from '../components/Stock/ImportModal';
+import AddStockModal from '../components/Stock/AddStockModal';
 import CardDetailModal from '../components/Cards/CardDetailModal';
 
 function GainText({ value, costBasis }) {
@@ -148,6 +149,7 @@ export default function Stock() {
   const [sort,           setSort]           = useState('name-asc');
   const [eventFilter,    setEventFilter]    = useState('');
   const [importOpen,     setImportOpen]     = useState(false);
+  const [addStockOpen,   setAddStockOpen]   = useState(false);
   const [detailCard,     setDetailCard]     = useState(null); // { id, imageUrl }
   const [page,           setPage]           = useState(1);
   const viewportRef = useRef(null);
@@ -287,14 +289,24 @@ export default function Stock() {
               allowDeselect={false}
             />
             {canImport && (
-              <Button
-                variant="light"
-                size="sm"
-                leftSection={<IconUpload size={13} />}
-                onClick={() => setImportOpen(true)}
-              >
-                Import
-              </Button>
+              <>
+                <Button
+                  variant="light"
+                  size="sm"
+                  leftSection={<IconPlus size={13} />}
+                  onClick={() => setAddStockOpen(true)}
+                >
+                  Add Stock
+                </Button>
+                <Button
+                  variant="light"
+                  size="sm"
+                  leftSection={<IconUpload size={13} />}
+                  onClick={() => setImportOpen(true)}
+                >
+                  Import
+                </Button>
+              </>
             )}
             <Group gap={4}>
               <ActionIcon
@@ -386,6 +398,7 @@ export default function Stock() {
       </ScrollArea>
 
       <ImportModal opened={importOpen} onClose={() => setImportOpen(false)} />
+      <AddStockModal opened={addStockOpen} onClose={() => setAddStockOpen(false)} />
       <CardDetailModal
         cardExternalId={detailCard?.id ?? null}
         fallbackImageUrl={detailCard?.imageUrl ?? null}
