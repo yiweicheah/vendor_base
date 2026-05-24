@@ -94,6 +94,8 @@ export function computeMetrics(transactions) {
   let txCount          = 0;
   let cashIn           = 0;
   let cashOut          = 0;
+  let totalIn          = 0;
+  let totalOut         = 0;
   let cardBuyQty       = 0;
   let cardSellQty      = 0;
   let grossProfit      = 0;
@@ -114,6 +116,7 @@ export function computeMetrics(transactions) {
 
     if (!byEvent.has(evId)) {
       byEvent.set(evId, { name: evName, txCount: 0, cashIn: 0, cashOut: 0,
+                          totalIn: 0, totalOut: 0,
                           grossProfit: 0, cardSoldTotal: 0, cardSoldWithCost: 0 });
     }
     const ev = byEvent.get(evId);
@@ -121,6 +124,11 @@ export function computeMetrics(transactions) {
 
     for (const line of tx.transactionLines ?? []) {
       const value = (line.unitPriceMyr || 0) * line.qty;
+
+      if (line.type === 'card' || line.type === 'sealed') {
+        if (line.side === 'in') { totalIn  += value; ev.totalIn  += value; }
+        else                    { totalOut += value; ev.totalOut += value; }
+      }
 
       if (line.side === 'in') {
         if (line.type === 'cash') {
@@ -189,6 +197,8 @@ export function computeMetrics(transactions) {
       txCount: d.txCount,
       cashIn:  d.cashIn,
       cashOut: d.cashOut,
+      totalIn:  d.totalIn,
+      totalOut: d.totalOut,
       netCash:        d.cashIn - d.cashOut,
       grossProfit:    +d.grossProfit.toFixed(2),
       cardSoldTotal:  d.cardSoldTotal,
@@ -204,6 +214,8 @@ export function computeMetrics(transactions) {
     txCount,
     cashIn,
     cashOut,
+    totalIn,
+    totalOut,
     netCash:         cashIn - cashOut,
     grossProfit:     +grossProfit.toFixed(2),
     cardSoldTotal,

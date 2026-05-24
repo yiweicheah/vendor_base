@@ -320,7 +320,7 @@ const EVENT_SORT_OPTIONS = [
   { value: 'txCount',     label: 'Most transactions' },
   { value: 'grossProfit', label: 'Profit' },
   { value: 'netCash',     label: 'Net cash' },
-  { value: 'cashIn',      label: 'Cash in' },
+  { value: 'totalOut',    label: 'Sales' },
   { value: 'date',        label: 'Date' },
   { value: 'name',        label: 'Name' },
 ];
@@ -444,11 +444,11 @@ function ByEventSection({ breakdown, events, canEdit, onEdit }) {
                   </Group>
                   <Group justify="space-between">
                     <Text size="xs" c="dimmed">Sales</Text>
-                    <Text size="xs">{rm(ev.cashIn)}</Text>
+                    <Text size="xs">{rm(ev.totalOut)}</Text>
                   </Group>
                   <Group justify="space-between">
                     <Text size="xs" c="dimmed">Purchases</Text>
-                    <Text size="xs" c="dimmed">−{rm(ev.cashOut)}</Text>
+                    <Text size="xs" c="dimmed">−{rm(ev.totalIn)}</Text>
                   </Group>
                   {ev.cardSoldTotal > 0 && (
                     <Group justify="space-between">
@@ -612,8 +612,8 @@ export default function Dashboard() {
                     <MetaRow label="Cards bought"  value={`${m.cardBuyQty} pcs`} />
                     <MetaRow label="Cards sold"    value={`${m.cardSellQty} pcs`} />
                     <Divider variant="dashed" />
-                    <MetaRow label="Sales"     value={rm(m.cashIn)} />
-                    <MetaRow label="Purchases" value={`−${rm(m.cashOut)}`} />
+                    <MetaRow label="Sales"     value={rm(m.totalOut)} />
+                    <MetaRow label="Purchases" value={`−${rm(m.totalIn)}`} />
                     {m.cardSoldTotal > 0 && (
                       <MetaRow
                         label={`Gross profit${!m.profitComplete ? ' ~' : ''}`}

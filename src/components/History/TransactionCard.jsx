@@ -222,6 +222,9 @@ export default function TransactionCard({ tx, view = 'list' }) {
   const cardCountIn  = inLines.filter((l)  => l.type === 'card').reduce((s, l) => s + l.qty, 0);
   const cardCountOut = outLines.filter((l) => l.type === 'card').reduce((s, l) => s + l.qty, 0);
 
+  const cardInTotal  = lineTotal(inLines.filter((l)  => l.type === 'card' || l.type === 'sealed'));
+  const cardOutTotal = lineTotal(outLines.filter((l) => l.type === 'card' || l.type === 'sealed'));
+
   const summaryParts = [];
   if (cardCountIn  > 0) summaryParts.push(`${cardCountIn} card${cardCountIn !== 1 ? 's' : ''} in`);
   if (cardCountOut > 0) summaryParts.push(`${cardCountOut} card${cardCountOut !== 1 ? 's' : ''} out`);
@@ -590,13 +593,13 @@ export default function TransactionCard({ tx, view = 'list' }) {
           </Text>
           <Text size="xs" c="dimmed">{formatDate(tx.createdAt)}</Text>
           <Group gap="xs" wrap="wrap" mt={2}>
-            {!isImport && (
+            {cardOutTotal > 0 && (
               <>
-                <Text size="xs" c="dimmed">Sales {rm(m.sales)}</Text>
+                <Text size="xs" c="dimmed">Sales {rm(cardOutTotal)}</Text>
                 <Text size="xs" c="dimmed">·</Text>
               </>
             )}
-            <Text size="xs" c="dimmed">Purchased −{rm(isImport ? inTotal : m.purchases)}</Text>
+            <Text size="xs" c="dimmed">Purchased {rm(cardInTotal)}</Text>
             {m.cardSoldTotal > 0 && (
               <>
                 <Text size="xs" c="dimmed">·</Text>
@@ -605,8 +608,6 @@ export default function TransactionCard({ tx, view = 'list' }) {
                 </Text>
               </>
             )}
-            <Text size="xs" c="dimmed">·</Text>
-            <Text size="xs" fw={500} c={netColor(m.net)}>Net {sign(m.net)}{rm(m.net)}</Text>
           </Group>
         </Stack>
 
