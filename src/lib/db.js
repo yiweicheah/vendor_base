@@ -681,6 +681,27 @@ export async function createSealedProduct({ orgId, name, referenceCostMyr, creat
   return toCamel(data);
 }
 
+export async function updateSealedProduct({ id, name }) {
+  const { data, error } = await supabase
+    .from('sealed_product')
+    .update({ name })
+    .eq('id', id)
+    .select('id, name, reference_cost_myr, external_id, image_url, created_at')
+    .single();
+  if (error) throw error;
+  // Keep denormalized sealed_name in transaction_lines in sync
+  await supabase.from('transaction_lines').update({ sealed_name: name }).eq('sealed_catalog_id', id);
+  return toCamel(data);
+}
+
+export async function deleteSealedProduct(id) {
+  const { error } = await supabase
+    .from('sealed_product')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 export async function getAllOrganizations() {
