@@ -4,12 +4,13 @@ import { Center, Loader } from '@mantine/core';
 import { supabase } from './lib/supabase';
 import useAuthStore from './store/authStore';
 import useOrgStore from './store/orgStore';
-import { resolveUser, loadAllMemberships, loadTransactions, loadEvents, loadFunds, loadPaymentMethods } from './lib/db';
+import { resolveUser, loadAllMemberships, loadTransactions, loadEvents, loadFunds, loadPaymentMethods, loadEventMiscCosts, loadFixedCosts, loadSealedProducts, loadMetrics, loadEventBreakdown, loadMonthlyPL, loadStock } from './lib/db';
 import { fetchExchangeRates } from './lib/exchangeRates';
 import { isSuperuserUid } from './lib/superuser';
 import AuthGuard from './components/AuthGuard';
 import SuperuserGuard from './components/SuperuserGuard';
 import Shell from './components/Layout/AppShell';
+import Landing from './pages/Landing';
 import SignIn from './pages/SignIn';
 import AcceptInvite from './pages/AcceptInvite';
 import NoAccess from './pages/NoAccess';
@@ -39,11 +40,13 @@ function MainApp({ onSwitchOrg, switchingOrg }) {
 
 export default function App() {
   const [switchingOrg, setSwitchingOrg] = useState(false);
-  const { setUser, clearAuth, loading: authLoading } = useAuthStore();
+  const { user, setUser, clearAuth, loading: authLoading } = useAuthStore();
   const {
     org, memberships,
     setMembership, setMemberships, clearOrgData,
     setTransactions, setEvents, setFunds, setPaymentMethods, setActiveEventId,
+    setMiscCosts, setFixedCosts, setSealedProducts,
+    setMetrics, setEventBreakdown, setMonthlyPL, setStock,
     clearOrg,
   } = useOrgStore();
 
@@ -103,11 +106,25 @@ export default function App() {
             loadEvents(initialMembership.org.id),
             loadFunds(initialMembership.org.id),
             loadPaymentMethods(initialMembership.org.id),
-          ]).then(([txs, events, funds, paymentMethods]) => {
+            loadEventMiscCosts(initialMembership.org.id),
+            loadFixedCosts(initialMembership.org.id),
+            loadSealedProducts(initialMembership.org.id),
+            loadMetrics(initialMembership.org.id),
+            loadEventBreakdown(initialMembership.org.id),
+            loadMonthlyPL(initialMembership.org.id),
+            loadStock(initialMembership.org.id),
+          ]).then(([txs, events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock]) => {
             setTransactions(txs);
             setEvents(events);
             setFunds(funds);
             setPaymentMethods(paymentMethods);
+            setMiscCosts(miscCosts);
+            setFixedCosts(fixedCosts);
+            setSealedProducts(sealedProducts);
+            setMetrics(metrics);
+            setEventBreakdown(eventBreakdown);
+            setMonthlyPL(monthlyPL);
+            setStock(stock);
             const savedEventId = localStorage.getItem('selectedEventId');
             if (savedEventId && events.some((e) => e.id === savedEventId)) {
               setActiveEventId(savedEventId);
@@ -149,16 +166,30 @@ export default function App() {
     clearOrgData();
     setSwitchingOrg(true);
     try {
-      const [txs, events, funds, paymentMethods] = await Promise.all([
+      const [txs, events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock] = await Promise.all([
         loadTransactions(orgId),
         loadEvents(orgId),
         loadFunds(orgId),
         loadPaymentMethods(orgId),
+        loadEventMiscCosts(orgId),
+        loadFixedCosts(orgId),
+        loadSealedProducts(orgId),
+        loadMetrics(orgId),
+        loadEventBreakdown(orgId),
+        loadMonthlyPL(orgId),
+        loadStock(orgId),
       ]);
       setTransactions(txs);
       setEvents(events);
       setFunds(funds);
       setPaymentMethods(paymentMethods);
+      setMiscCosts(miscCosts);
+      setFixedCosts(fixedCosts);
+      setSealedProducts(sealedProducts);
+      setMetrics(metrics);
+      setEventBreakdown(eventBreakdown);
+      setMonthlyPL(monthlyPL);
+      setStock(stock);
     } finally {
       setSwitchingOrg(false);
     }
@@ -188,6 +219,18 @@ export default function App() {
           <SuperuserGuard>
             <AdminDashboard />
           </SuperuserGuard>
+        }
+      />
+      <Route
+        path="/"
+        element={
+          user ? (
+            <AuthGuard>
+              <MainApp onSwitchOrg={handleSwitchOrg} switchingOrg={switchingOrg} />
+            </AuthGuard>
+          ) : (
+            <Landing />
+          )
         }
       />
       <Route

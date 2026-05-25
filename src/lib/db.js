@@ -107,6 +107,79 @@ export async function loadAllMemberships(dbUserId) {
   }
 }
 
+// ─── Dashboard aggregates (server-side RPCs) ─────────────────────────────────
+
+// toCamel turns net_pl into netPl; the JS analytics contract uses netPL (acronym
+// stays uppercase). Normalize before handing to React.
+function fixNetPL(obj) {
+  if (obj && Object.prototype.hasOwnProperty.call(obj, 'netPl')) {
+    obj.netPL = obj.netPl;
+    delete obj.netPl;
+  }
+  return obj;
+}
+
+/**
+ * Global P&L / cash / stock metrics for an org. Server-side equivalent of
+ * computeMetrics(transactions, miscCosts, fixedCosts) in src/lib/analytics.js
+ * minus the eventBreakdown array (use loadEventBreakdown for that).
+ * Returns a single object with camelCase keys.
+ */
+export async function loadMetrics(orgId) {
+  const { data, error } = await supabase.rpc('get_org_metrics', { p_org_id: orgId });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? fixNetPL(toCamel(row)) : null;
+}
+
+/**
+ * Per-event breakdown for an org. Server-side equivalent of
+ * computeMetrics(...).eventBreakdown. Walk-in rows are exposed with
+ * id='__none__' (matching the JS contract used by ByEventSection).
+ */
+export async function loadEventBreakdown(orgId) {
+  const { data, error } = await supabase.rpc('get_org_event_breakdown', { p_org_id: orgId });
+  if (error) throw error;
+  return toCamel(data ?? []).map((row) => {
+    const r = fixNetPL(row);
+    r.id = r.eventId ?? '__none__';
+    r.name = r.eventName ?? 'Walk-in';
+    delete r.eventId;
+    delete r.eventName;
+    return r;
+  });
+}
+
+/**
+ * Month-by-month P&L for an org. Server-side equivalent of repeatedly calling
+ * computeMonthlyPL(...) for every month in the dataset. Returns an array of
+ * { month, txCount, cardBuyQty, cardSellQty, revenue, purchases,
+ *   openingStock, closingStock, grossProfit, miscCosts, fixedCosts, netPL }.
+ */
+export async function loadMonthlyPL(orgId) {
+  const { data, error } = await supabase.rpc('get_org_monthly_pl', { p_org_id: orgId });
+  if (error) throw error;
+  return (toCamel(data ?? [])).map(fixNetPL);
+}
+
+/**
+ * Per-key stock aggregates (cards + sealed) for an org. Server-side equivalent
+ * of buildStockMap(transactions) — only returns items with net qty > 0. Pass
+ * { eventId: '__none__' } for walk-in transactions only, an event UUID to scope
+ * to that event, or omit for global stock.
+ * Returns rows: { type, key, name, number, setName, lang, imageUrl,
+ *                 qtyIn, qtyOut, costIn, marketIn }.
+ */
+export async function loadStock(orgId, { eventId } = {}) {
+  const params = { p_org_id: orgId };
+  if (eventId === '__none__') params.p_filter_walk_ins = true;
+  else if (eventId) params.p_event_id = eventId;
+
+  const { data, error } = await supabase.rpc('get_org_stock', params);
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
 // ─── Transactions ─────────────────────────────────────────────────────────────
 
 export async function loadTransactions(orgId) {
@@ -125,7 +198,7 @@ export async function loadTransactions(orgId) {
           card_external_id, card_name, card_number, card_set_name, card_lang, card_image_url,
           avg_cost_myr,
           market_price_myr, price_source,
-          sealed_name, sealed_reference_price,
+          sealed_name, sealed_reference_price, sealed_catalog_id,
           qty, unit_price_myr
         )
       `)
@@ -319,11 +392,11 @@ export async function createEvent({ orgId, name, location, startsAt, endsAt, cre
 }
 
 export async function getOrCreateImportEvent({ orgId, createdById, existingEvents }) {
-  const existing = existingEvents.find((e) => e.name === 'Import');
+  const existing = existingEvents.find((e) => e.name === 'Import/Purchase');
   if (existing) return existing;
   const { data, error } = await supabase
     .from('event')
-    .insert({ org_id: orgId, name: 'Import', created_by_id: createdById })
+    .insert({ org_id: orgId, name: 'Import/Purchase', created_by_id: createdById })
     .select('id, name, location, starts_at, ends_at')
     .single();
   if (error) throw error;
@@ -334,6 +407,14 @@ export async function updateEvent({ eventId, name, location, startsAt, endsAt })
   const { error } = await supabase
     .from('event')
     .update({ name, location: location ?? null, starts_at: startsAt ?? null, ends_at: endsAt ?? null })
+    .eq('id', eventId);
+  if (error) throw error;
+}
+
+export async function deleteEvent(eventId) {
+  const { error } = await supabase
+    .from('event')
+    .update({ deleted_at: new Date().toISOString() })
     .eq('id', eventId);
   if (error) throw error;
 }
@@ -467,10 +548,12 @@ export async function createFundEntry({ orgId, amountMyr, note, createdById }) {
   return toCamel(data);
 }
 
-export async function updateFundEntry({ id, amountMyr }) {
+export async function updateFundEntry({ id, amountMyr, note }) {
+  const patch = { amount_myr: amountMyr };
+  if (note !== undefined) patch.note = note;
   const { error } = await supabase
     .from('fund_entry')
-    .update({ amount_myr: amountMyr })
+    .update(patch)
     .eq('id', id);
   if (error) throw error;
 }
@@ -481,6 +564,121 @@ export async function deleteFundEntry(id) {
     .delete()
     .eq('id', id);
   if (error) throw error;
+}
+
+// ─── Event misc costs ─────────────────────────────────────────────────────────
+
+export async function loadEventMiscCosts(orgId) {
+  try {
+    const { data, error } = await supabase
+      .from('event_misc_cost')
+      .select('id, event_id, label, amount_myr, created_at')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return toCamel(data ?? []);
+  } catch (err) {
+    console.error('loadEventMiscCosts error:', err);
+    return [];
+  }
+}
+
+export async function createEventMiscCost({ orgId, eventId, label, amountMyr, createdById }) {
+  const { data, error } = await supabase
+    .from('event_misc_cost')
+    .insert({ org_id: orgId, event_id: eventId, label, amount_myr: amountMyr, created_by_id: createdById ?? null })
+    .select('id, event_id, label, amount_myr, created_at')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
+
+export async function updateEventMiscCost({ id, label, amountMyr }) {
+  const updates = {};
+  if (label     !== undefined) updates.label      = label;
+  if (amountMyr !== undefined) updates.amount_myr = amountMyr;
+  const { error } = await supabase
+    .from('event_misc_cost')
+    .update(updates)
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteEventMiscCost(id) {
+  const { error } = await supabase
+    .from('event_misc_cost')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Fixed costs ──────────────────────────────────────────────────────────────
+
+export async function loadFixedCosts(orgId) {
+  try {
+    const { data, error } = await supabase
+      .from('fixed_cost')
+      .select('id, label, amount_myr, month, created_at')
+      .eq('org_id', orgId)
+      .order('month', { ascending: false });
+    if (error) throw error;
+    return toCamel(data ?? []);
+  } catch (err) {
+    console.error('loadFixedCosts error:', err);
+    return [];
+  }
+}
+
+export async function createFixedCost({ orgId, label, amountMyr, month, createdById }) {
+  const { data, error } = await supabase
+    .from('fixed_cost')
+    .insert({ org_id: orgId, label, amount_myr: amountMyr, month, created_by_id: createdById ?? null })
+    .select('id, label, amount_myr, month, created_at')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
+}
+
+export async function updateFixedCost({ id, label, amountMyr }) {
+  const updates = {};
+  if (label     !== undefined) updates.label      = label;
+  if (amountMyr !== undefined) updates.amount_myr = amountMyr;
+  const { error } = await supabase
+    .from('fixed_cost')
+    .update(updates)
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteFixedCost(id) {
+  const { error } = await supabase
+    .from('fixed_cost')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Sealed products ──────────────────────────────────────────────────────────
+
+export async function loadSealedProducts(orgId) {
+  const { data, error } = await supabase
+    .from('sealed_product')
+    .select('id, name, reference_cost_myr, external_id, image_url, created_at')
+    .eq('org_id', orgId)
+    .is('deleted_at', null)
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
+export async function createSealedProduct({ orgId, name, referenceCostMyr, createdById }) {
+  const { data, error } = await supabase
+    .from('sealed_product')
+    .insert({ org_id: orgId, name, reference_cost_myr: referenceCostMyr ?? null, created_by_id: createdById })
+    .select('id, name, reference_cost_myr, external_id, image_url, created_at')
+    .single();
+  if (error) throw error;
+  return toCamel(data);
 }
 
 // ─── Admin ────────────────────────────────────────────────────────────────────

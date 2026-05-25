@@ -183,6 +183,7 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
 export default function TransactionCard({ tx, view = 'list' }) {
   const user           = useAuthStore((s) => s.user);
   const role           = useOrgStore((s) => s.role);
+  const org            = useOrgStore((s) => s.org);
   const funds          = useOrgStore((s) => s.funds);
   const events         = useOrgStore((s) => s.events);
   const paymentMethods = useOrgStore((s) => s.paymentMethods);
@@ -196,6 +197,8 @@ export default function TransactionCard({ tx, view = 'list' }) {
     updateTransactionPaymentMethod:  patchPaymentMethod,
     updateFundEntry:                 updateFundEntryInStore,
     removeFundEntry:                 removeFundEntryFromStore,
+    refreshAggregates,
+    refreshStock,
   } = useOrgStore();
 
   const isImport   = tx.notes?.startsWith('Stock import') || tx.notes?.startsWith('Stock addition');
@@ -266,6 +269,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
             await deleteFundEntry(linkedFund.id);
             removeFundEntryFromStore(linkedFund.id);
           }
+          if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
           notifications.show({ message: 'Transaction deleted.', color: 'red', autoClose: 2000 });
         } catch (err) {
           notifications.show({ title: 'Delete failed', message: err.message, color: 'red' });
@@ -298,6 +302,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
               await syncFundEntry(newTotal);
             }
           }
+          if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
           notifications.show({ message: 'Line removed.', color: 'orange', autoClose: 2000 });
         } catch (err) {
           notifications.show({ title: 'Failed', message: err.message, color: 'red' });
@@ -368,6 +373,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
       setLineEdits({});
       setQtyEdits({});
       setEditing(false);
+      if (org?.id) refreshAggregates(org.id);
       notifications.show({ message: 'Transaction updated.', color: 'green', autoClose: 2000 });
     } catch (err) {
       notifications.show({ title: 'Save failed', message: err.message, color: 'red' });
@@ -432,6 +438,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
           .reduce((sum, l) => sum + (l.unitPriceMyr || 0) * l.qty, 0);
         await syncFundEntry(currentCost + (cardData.marketPriceMyr ?? 0));
       }
+      if (org?.id) refreshAggregates(org.id);
       notifications.show({ message: 'Card added.', color: 'teal', autoClose: 2000 });
     } catch (err) {
       notifications.show({ title: 'Failed to add card', message: err.message, color: 'red' });

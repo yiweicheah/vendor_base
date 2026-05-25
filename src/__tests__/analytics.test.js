@@ -117,7 +117,7 @@ describe('computeMetrics', () => {
     expect(m.txCount).toBe(0);
     expect(m.cashIn).toBe(0);
     expect(m.cashOut).toBe(0);
-    expect(m.netCash).toBe(0);
+    expect(m.netCashFlow).toBe(0);
     expect(m.cardBuyQty).toBe(0);
     expect(m.cardSellQty).toBe(0);
     expect(m.stockQty).toBe(0);
@@ -136,12 +136,12 @@ describe('computeMetrics', () => {
     expect(m.cardBuyQty).toBe(3);
   });
 
-  it('netCash = cashIn - cashOut', () => {
+  it('netCashFlow = cashIn - cashOut', () => {
     const m = computeMetrics([
       tx([cashIn(100)]),
       tx([cashOut(60)]),
     ]);
-    expect(m.netCash).toBe(40);
+    expect(m.netCashFlow).toBe(40);
   });
 
   it('txCount counts each transaction', () => {
@@ -179,13 +179,13 @@ describe('computeMetrics', () => {
     expect(m.eventBreakdown[0].name).toBe('Walk-in');
   });
 
-  it('event cashIn/cashOut/netCash per-event breakdown', () => {
+  it('event cashIn/cashOut/netCashFlow per-event breakdown', () => {
     const ev1 = { id: 'e1', name: 'E1' };
     const m = computeMetrics([tx([cashIn(80), cashOut(30)], ev1)]);
     const ev = m.eventBreakdown[0];
     expect(ev.cashIn).toBe(80);
     expect(ev.cashOut).toBe(30);
-    expect(ev.netCash).toBe(50);
+    expect(ev.netCashFlow).toBe(50);
   });
 
   it('card lines without cardExternalId ignored for stock', () => {
@@ -243,27 +243,34 @@ describe('computeMetrics', () => {
     expect(m.eventBreakdown[0].grossProfit).toBe(20.00);
   });
 
-  // ── global grossProfit ────────────────────────────────────────────────────
+  // ── global grossProfit (revenue + stockCost - totalPurchases) ────────────
 
-  it('global grossProfit: correct across all events', () => {
-    const ev1 = { id: 'e1', name: 'E1' };
-    const ev2 = { id: 'e2', name: 'E2' };
-    const lineA = { type: 'card', side: 'out', cardExternalId: 'A', qty: 2, unitPriceMyr: 10, avgCostMyr: 6 };
-    const lineB = { type: 'card', side: 'out', cardExternalId: 'B', qty: 1, unitPriceMyr: 15, avgCostMyr: 5 };
+  it('global grossProfit: buy 3 sell 2 → revenue + remaining stock - purchases', () => {
+    // buy 3 @ 6 → totalIn=18, stockCost for remaining 1 = 6
+    // sell 2 @ 10 → totalOut=20
+    // grossProfit = 20 + 6 - 18 = 8
+    const buyLine  = cardIn('A', 3, 6);
+    const sellLine = { type: 'card', side: 'out', cardExternalId: 'A', qty: 2, unitPriceMyr: 10, avgCostMyr: 6 };
     const m = computeMetrics([
-      tx([lineA, cashIn(20)], ev1),  // profit = 8
-      tx([lineB, cashIn(15)], ev2),  // profit = 10
+      tx([buyLine, cashOut(18)]),
+      tx([sellLine, cashIn(20)]),
     ]);
-    expect(m.grossProfit).toBe(18);
-    expect(m.cardSoldTotal).toBe(3);
-    expect(m.profitComplete).toBe(true);
+    expect(m.grossProfit).toBe(8);
+    expect(m.totalOut).toBe(20);
+    expect(m.totalIn).toBe(18);
+    expect(m.stockCost).toBe(6);
   });
 
-  it('global grossProfit: profitComplete false when any line missing avgCostMyr', () => {
-    const line = { type: 'card', side: 'out', cardExternalId: 'A', qty: 1, unitPriceMyr: 10, avgCostMyr: null };
-    const m = computeMetrics([tx([line, cashIn(10)])]);
-    expect(m.profitComplete).toBe(false);
-    expect(m.grossProfit).toBe(0);
+  it('global grossProfit: sell all stock → revenue - purchases (stockCost = 0)', () => {
+    // buy 2 @ 5 → totalIn=10, sell 2 @ 12 → totalOut=24, stockCost=0
+    // grossProfit = 24 + 0 - 10 = 14
+    const buyLine  = cardIn('A', 2, 5);
+    const sellLine = { type: 'card', side: 'out', cardExternalId: 'A', qty: 2, unitPriceMyr: 12, avgCostMyr: 5 };
+    const m = computeMetrics([
+      tx([buyLine, cashOut(10)]),
+      tx([sellLine, cashIn(24)]),
+    ]);
+    expect(m.grossProfit).toBe(14);
   });
 
   it('global grossProfit: no card sales → grossProfit 0, profitComplete true', () => {

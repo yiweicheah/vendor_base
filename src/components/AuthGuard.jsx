@@ -7,7 +7,7 @@ export default function AuthGuard({ children }) {
   const { org }           = useOrgStore();
 
   if (loading)            return null;
-  if (!user)              return <Navigate to="/sign-in"  replace />;
+  if (!user)              return <Navigate to="/"         replace />;
   if (user.isSuperuser)   return <Navigate to="/admin"    replace />;
   if (!org)               return <Navigate to="/no-access" replace />;
 

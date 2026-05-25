@@ -1,12 +1,12 @@
 import {
   Paper, Group, Stack, Text, ActionIcon,
-  NumberInput, Badge, Divider, Image, Box, ThemeIcon,
+  Badge, Divider, Image, Box, ThemeIcon,
 } from '@mantine/core';
+import CurrencyInput from '../shared/CurrencyInput';
 import {
-  IconX, IconPlus, IconMinus, IconCurrencyDollar,
+  IconX, IconPlus, IconMinus, IconCurrencyDollar, IconPackage,
 } from '@tabler/icons-react';
 import { calcPct, pctColor } from '../../lib/pricing';
-import { getStock } from '../../lib/inventory';
 import useCartStore from '../../store/cartStore';
 import useOrgStore from '../../store/orgStore';
 
@@ -19,15 +19,17 @@ function StockBadge({ stock }) {
 
 export default function CartLine({ line, side }) {
   const { removeLine, updateLine } = useCartStore();
-  const transactions = useOrgStore((s) => s.transactions);
+
+  // Stock is only relevant for card lines on the OUT side.
+  // Subscribe to just the qty number — equality is === so this only re-renders on actual qty changes.
+  const showStock = side === 'out' && line.type === 'card' && line.cardExternalId != null;
+  const stockQty = useOrgStore((s) =>
+    showStock ? (s.stockMap.get(String(line.cardExternalId))?.qty ?? 0) : null
+  );
+  const stock = showStock ? stockQty : null;
 
   const pct   = calcPct(line.unitPrice, line.marketPrice);
   const color = pctColor(pct, side);
-
-  // Stock is only relevant for card lines on the OUT side
-  const stock = (side === 'out' && line.type === 'card' && line.cardExternalId != null)
-    ? getStock(line.cardExternalId, transactions)
-    : null;
 
   function increment() {
     updateLine(side, line.id, { qty: line.qty + 1 });
@@ -69,15 +71,10 @@ export default function CartLine({ line, side }) {
             <Text size="sm" fw={500}>Cash</Text>
           </Group>
           <Group gap="xs" wrap="nowrap">
-            <NumberInput
-              value={line.unitPrice ?? ''}
-              onChange={(val) => { const price = typeof val === 'number' ? val : parseFloat(val); if (!isNaN(price)) updateLine(side, line.id, { unitPrice: price }); }}
-              onBlur={(e) => { const v = parseFloat(e.currentTarget.value); updateLine(side, line.id, { unitPrice: isNaN(v) ? 0 : v }); }}
+            <CurrencyInput
+              value={line.unitPrice ?? 0}
+              onChange={(val) => updateLine(side, line.id, { unitPrice: val })}
               leftSection={<Text size="xs" c="dimmed">RM</Text>}
-              decimalScale={2}
-              fixedDecimalScale
-              min={0}
-              hideControls
               w={130}
               size="sm"
               styles={{ input: { textAlign: 'right' } }}
@@ -92,6 +89,94 @@ export default function CartLine({ line, side }) {
             </ActionIcon>
           </Group>
         </Group>
+      </Paper>
+    );
+  }
+
+  // ─── Sealed product line ──────────────────────────────────────────────────
+  if (line.type === 'sealed') {
+    return (
+      <Paper withBorder p="sm" radius="md">
+        <Stack gap="sm">
+
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <Group gap="sm" wrap="nowrap">
+              <ThemeIcon variant="light" color="teal" size="md" radius="sm">
+                <IconPackage size={16} />
+              </ThemeIcon>
+              <Stack gap={0}>
+                <Text size="sm" fw={500}>{line.sealedName ?? 'Sealed product'}</Text>
+                <Text size="xs" c="dimmed">Sealed</Text>
+              </Stack>
+            </Group>
+            <ActionIcon
+              variant="subtle"
+              color="red"
+              size="sm"
+              style={{ flexShrink: 0 }}
+              onClick={() => removeLine(side, line.id)}
+            >
+              <IconX size={14} />
+            </ActionIcon>
+          </Group>
+
+          <Group grow gap="md">
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed" fw={500}>Qty</Text>
+              <Group gap={0} wrap="nowrap">
+                <ActionIcon
+                  variant="default"
+                  size="lg"
+                  radius="sm"
+                  style={{ borderRight: 'none', borderRadius: '4px 0 0 4px' }}
+                  onClick={decrement}
+                >
+                  <IconMinus size={13} />
+                </ActionIcon>
+                <Box
+                  style={{
+                    width: 40,
+                    height: 36,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid var(--mantine-color-dark-4)',
+                  }}
+                >
+                  <Text size="sm">{line.qty}</Text>
+                </Box>
+                <ActionIcon
+                  variant="default"
+                  size="lg"
+                  radius="sm"
+                  style={{ borderLeft: 'none', borderRadius: '0 4px 4px 0' }}
+                  onClick={increment}
+                >
+                  <IconPlus size={13} />
+                </ActionIcon>
+              </Group>
+            </Stack>
+
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed" fw={500}>Unit Price</Text>
+              <CurrencyInput
+                value={line.unitPrice ?? 0}
+                onChange={(val) => updateLine(side, line.id, { unitPrice: val })}
+                leftSection={<Text size="xs" c="dimmed">RM</Text>}
+                size="md"
+                styles={{ input: { textAlign: 'right' } }}
+              />
+            </Stack>
+          </Group>
+
+          {side === 'out' && line.avgCost != null && (
+            <>
+              <Divider variant="dashed" />
+              <Text size="xs" c="dimmed">Avg cost RM {line.avgCost.toFixed(2)}</Text>
+            </>
+          )}
+
+        </Stack>
       </Paper>
     );
   }
@@ -181,15 +266,10 @@ export default function CartLine({ line, side }) {
 
           <Stack gap={4}>
             <Text size="xs" c="dimmed" fw={500}>Unit Price</Text>
-            <NumberInput
-              value={line.unitPrice ?? ''}
-              onChange={(val) => { const price = typeof val === 'number' ? val : parseFloat(val); if (!isNaN(price)) updateLine(side, line.id, { unitPrice: price }); }}
-              onBlur={(e) => { const v = parseFloat(e.currentTarget.value); updateLine(side, line.id, { unitPrice: isNaN(v) ? 0 : v }); }}
+            <CurrencyInput
+              value={line.unitPrice ?? 0}
+              onChange={(val) => updateLine(side, line.id, { unitPrice: val })}
               leftSection={<Text size="xs" c="dimmed">RM</Text>}
-              decimalScale={2}
-              fixedDecimalScale
-              min={0}
-              hideControls
               size="md"
               styles={{ input: { textAlign: 'right' } }}
             />

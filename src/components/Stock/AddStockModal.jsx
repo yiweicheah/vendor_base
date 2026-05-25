@@ -1,30 +1,33 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Modal, Stack, Group, Text, TextInput, NumberInput, Button,
-  Image, Box, ScrollArea, Divider, SegmentedControl, ActionIcon,
+  Image, Box, ScrollArea, Divider, ActionIcon, Alert,
   Loader, Badge,
 } from '@mantine/core';
+import CurrencyInput from '../shared/CurrencyInput';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconX, IconPlus } from '@tabler/icons-react';
+import { IconSearch, IconX, IconPlus, IconAlertCircle } from '@tabler/icons-react';
 import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokewallet';
-import { saveTransaction, saveTransactionLine, loadTransactions, createFundEntry, getOrCreateImportEvent } from '../../lib/db';
+import { saveTransaction, saveTransactionLine, loadTransactions, getOrCreateImportEvent } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
 
 export default function AddStockModal({ opened, onClose }) {
-  const org             = useOrgStore((s) => s.org);
-  const events          = useOrgStore((s) => s.events);
-  const addEvent        = useOrgStore((s) => s.addEvent);
-  const setTransactions = useOrgStore((s) => s.setTransactions);
-  const addFundEntry    = useOrgStore((s) => s.addFundEntry);
-  const user            = useAuthStore((s) => s.user);
+  const org                = useOrgStore((s) => s.org);
+  const events             = useOrgStore((s) => s.events);
+  const addEvent           = useOrgStore((s) => s.addEvent);
+  const setTransactions    = useOrgStore((s) => s.setTransactions);
+  const refreshAggregates  = useOrgStore((s) => s.refreshAggregates);
+  const refreshStock       = useOrgStore((s) => s.refreshStock);
+  const funds              = useOrgStore((s) => s.funds);
+  const metrics            = useOrgStore((s) => s.metrics);
+  const user               = useAuthStore((s) => s.user);
 
   const [query,      setQuery]      = useState('');
   const [results,    setResults]    = useState([]);
   const [searching,  setSearching]  = useState(false);
   const [lines,      setLines]      = useState([]);
-  const [payment,    setPayment]    = useState('auto');
   const [saving,     setSaving]     = useState(false);
   const debounceRef  = useRef(null);
   const abortRef     = useRef(null);
@@ -34,7 +37,6 @@ export default function AddStockModal({ opened, onClose }) {
       setQuery('');
       setResults([]);
       setLines([]);
-      setPayment('auto');
       setSaving(false);
     }
   }, [opened]);
@@ -89,7 +91,10 @@ export default function AddStockModal({ opened, onClose }) {
     setLines((prev) => prev.map((l) => l._id === id ? { ...l, [field]: value } : l));
   }
 
-  const totalCost = lines.reduce((sum, l) => sum + (l.unitPriceMyr || 0) * (l.qty || 0), 0);
+  const totalCost    = lines.reduce((sum, l) => sum + (l.unitPriceMyr || 0) * (l.qty || 0), 0);
+  const totalFunds   = funds.reduce((sum, f) => sum + (f.amountMyr ?? 0), 0);
+  const fundOnHand   = totalFunds + (metrics?.netCashFlow ?? 0);
+  const insufficient = totalCost > 0 && totalCost > fundOnHand;
 
   async function handleSave() {
     if (!org?.id || !user?.dbId || lines.length === 0) return;
@@ -101,11 +106,10 @@ export default function AddStockModal({ opened, onClose }) {
 
       const date = new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
 
-      const isAutoFunds = payment === 'auto';
       const txId = await saveTransaction({
         orgId:        org.id,
         createdById:  user.dbId,
-        notes:        isAutoFunds ? `Stock addition — ${date}` : null,
+        notes:        `Stock addition — ${date}`,
         eventId:      importEvent.id,
         paymentMethod: null,
       });
@@ -135,7 +139,7 @@ export default function AddStockModal({ opened, onClose }) {
         )
       );
 
-      if (!isAutoFunds && totalCost > 0) {
+      if (totalCost > 0) {
         await saveTransactionLine({
           transactionId: txId,
           side:          'out',
@@ -150,17 +154,11 @@ export default function AddStockModal({ opened, onClose }) {
         });
       }
 
-      if (isAutoFunds && totalCost > 0) {
-        const entry = await createFundEntry({
-          orgId:       org.id,
-          amountMyr:   totalCost,
-          note:        `Auto-deposit for stock addition — ${date} [tx:${txId}]`,
-          createdById: user.dbId,
-        });
-        addFundEntry({ ...entry, amountMyr: totalCost });
-      }
-
-      const refreshed = await loadTransactions(org.id);
+      const [refreshed] = await Promise.all([
+        loadTransactions(org.id),
+        refreshAggregates(org.id),
+        refreshStock(org.id),
+      ]);
       setTransactions(refreshed);
 
       notifications.show({
@@ -250,14 +248,12 @@ export default function AddStockModal({ opened, onClose }) {
                     onChange={(v) => updateLine(line._id, 'qty', v || 1)}
                     disabled={saving}
                   />
-                  <NumberInput
+                  <CurrencyInput
                     size="xs"
                     w={90}
-                    min={0}
-                    decimalScale={2}
-                    prefix="RM "
+                    leftSection={<Text size="xs" c="dimmed">RM</Text>}
                     value={line.unitPriceMyr}
-                    onChange={(v) => updateLine(line._id, 'unitPriceMyr', v ?? 0)}
+                    onChange={(v) => updateLine(line._id, 'unitPriceMyr', v)}
                     disabled={saving}
                   />
                   <ActionIcon variant="subtle" color="red" size="sm" onClick={() => removeLine(line._id)} disabled={saving}>
@@ -281,25 +277,15 @@ export default function AddStockModal({ opened, onClose }) {
               <Text size="sm" fw={600}>RM {totalCost.toFixed(2)}</Text>
             </Group>
 
-            <Stack gap={4}>
-              <Text size="xs" c="dimmed">Payment</Text>
-              <SegmentedControl
-                fullWidth
-                size="xs"
-                value={payment}
-                onChange={setPayment}
-                disabled={saving}
-                data={[
-                  { value: 'auto',   label: 'Auto-add funds' },
-                  { value: 'deduct', label: 'Deduct from cash' },
-                ]}
-              />
-              <Text size="xs" c="dimmed">
-                {payment === 'auto'
-                  ? 'A fund entry equal to the total cost will be auto-created. Cash on hand stays the same.'
-                  : 'Total cost is deducted from your current cash on hand.'}
-              </Text>
-            </Stack>
+            {insufficient && (
+              <Alert icon={<IconAlertCircle size={16} />} color="orange" variant="light">
+                This purchase costs{' '}
+                <Text component="span" fw={600} size="sm">MYR {totalCost.toFixed(2)}</Text>
+                {' '}but current funds on hand are only{' '}
+                <Text component="span" fw={600} size="sm">MYR {fundOnHand.toFixed(2)}</Text>.
+                {' '}Add funds manually if needed.
+              </Alert>
+            )}
 
             <Button fullWidth onClick={handleSave} loading={saving} disabled={lines.length === 0}>
               Add {lines.length} card{lines.length !== 1 ? 's' : ''} to stock

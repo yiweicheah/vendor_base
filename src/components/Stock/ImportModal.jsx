@@ -8,7 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { IconUpload, IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokewallet';
 import { tokenize, buildQuery, buildAlternateNumberQuery } from '../../lib/tokenizer';
-import { saveTransaction, saveTransactionLine, loadTransactions, createFundEntry, getOrCreateImportEvent } from '../../lib/db';
+import { saveTransaction, saveTransactionLine, loadTransactions, getOrCreateImportEvent } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
@@ -84,11 +84,14 @@ function MatchedRow({ line }) {
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
 export default function ImportModal({ opened, onClose }) {
-  const org             = useOrgStore((s) => s.org);
-  const events          = useOrgStore((s) => s.events);
-  const addEvent        = useOrgStore((s) => s.addEvent);
-  const setTransactions = useOrgStore((s) => s.setTransactions);
-  const addFundEntry    = useOrgStore((s) => s.addFundEntry);
+  const org                = useOrgStore((s) => s.org);
+  const events             = useOrgStore((s) => s.events);
+  const addEvent           = useOrgStore((s) => s.addEvent);
+  const setTransactions    = useOrgStore((s) => s.setTransactions);
+  const refreshAggregates  = useOrgStore((s) => s.refreshAggregates);
+  const refreshStock       = useOrgStore((s) => s.refreshStock);
+  const funds              = useOrgStore((s) => s.funds);
+  const metrics            = useOrgStore((s) => s.metrics);
   const user            = useAuthStore((s) => s.user);
 
   const [step,       setStep]       = useState('upload');   // 'upload' | 'processing' | 'review'
@@ -285,16 +288,25 @@ export default function ImportModal({ opened, onClose }) {
 
       const totalCost = matched.reduce((sum, l) => sum + (l.unitPriceMyr || 0) * l.qty, 0);
       if (totalCost > 0) {
-        const entry = await createFundEntry({
-          orgId:       org.id,
-          amountMyr:   totalCost,
-          note:        `Auto-deposit for stock import — ${date} [tx:${txId}]`,
-          createdById: user.dbId,
+        await saveTransactionLine({
+          transactionId:  txId,
+          side:           'out',
+          type:           'cash',
+          qty:            1,
+          unitPriceMyr:   totalCost,
+          cardExternalId: null, cardName: null, cardNumber: null,
+          cardSetName: null, cardLang: null, cardImageUrl: null,
+          marketPriceMyr: null, priceSource: null,
+          usdToMyrRate: USD_TO_MYR, eurToMyrRate: EUR_TO_MYR,
+          sealedProductId: null, sealedName: null, sealedReferencePrice: null,
         });
-        addFundEntry({ ...entry, amountMyr: totalCost });
       }
 
-      const refreshed = await loadTransactions(org.id);
+      const [refreshed] = await Promise.all([
+        loadTransactions(org.id),
+        refreshAggregates(org.id),
+        refreshStock(org.id),
+      ]);
       setTransactions(refreshed);
 
       notifications.show({
@@ -311,6 +323,11 @@ export default function ImportModal({ opened, onClose }) {
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
+
+  const totalCost    = matched.reduce((sum, l) => sum + (l.unitPriceMyr || 0) * l.qty, 0);
+  const totalFunds   = funds.reduce((sum, f) => sum + (f.amountMyr ?? 0), 0);
+  const fundOnHand   = totalFunds + (metrics?.netCashFlow ?? 0);
+  const insufficient = totalCost > 0 && totalCost > fundOnHand;
 
   const pct = progress.total > 0
     ? Math.round((progress.current / progress.total) * 100)
@@ -449,6 +466,16 @@ export default function ImportModal({ opened, onClose }) {
                 </ScrollArea>
               </Stack>
             </>
+          )}
+
+          {insufficient && (
+            <Alert icon={<IconAlertCircle size={16} />} color="orange" variant="light">
+              This import costs{' '}
+              <Text component="span" fw={600} size="sm">MYR {totalCost.toFixed(2)}</Text>
+              {' '}but current funds on hand are only{' '}
+              <Text component="span" fw={600} size="sm">MYR {fundOnHand.toFixed(2)}</Text>.
+              {' '}Add funds manually before or after importing if needed.
+            </Alert>
           )}
 
           <Group justify="space-between" pt="xs">

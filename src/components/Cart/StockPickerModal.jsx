@@ -5,7 +5,6 @@ import {
 } from '@mantine/core';
 import { IconSearch, IconPackage } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { computeStockItems } from '../../lib/analytics';
 import { normalizeStr } from '../../lib/tokenizer';
 import useCartStore from '../../store/cartStore';
 import useOrgStore from '../../store/orgStore';
@@ -68,14 +67,17 @@ function StockTile({ item, onSelect }) {
 }
 
 export default function StockPickerModal({ opened, onClose, onSearchFallback }) {
-  const transactions = useOrgStore((s) => s.transactions);
+  const stockMap     = useOrgStore((s) => s.stockMap);
   const { addLine }  = useCartStore();
   const [query, setQuery] = useState('');
 
-  const stockItems = useMemo(
-    () => computeStockItems(transactions).filter((i) => i.type === 'card'),
-    [transactions]
-  );
+  const stockItems = useMemo(() => {
+    const items = [];
+    for (const item of stockMap.values()) {
+      if (item.type === 'card') items.push(item);
+    }
+    return items;
+  }, [stockMap]);
 
   const filtered = useMemo(() => {
     const q = normalizeStr(query.trim().toLowerCase());

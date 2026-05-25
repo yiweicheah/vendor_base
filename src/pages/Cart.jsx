@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import {
   IconArrowDown, IconArrowUp,
-  IconSearch, IconCurrencyDollar, IconStack2,
+  IconSearch, IconCurrencyDollar, IconStack2, IconPackage,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import useCartStore from '../store/cartStore';
@@ -16,6 +16,7 @@ import CartFooter from '../components/Cart/CartFooter';
 import EventSelector from '../components/Cart/EventSelector';
 import SearchModal from '../components/Search/SearchModal';
 import StockPickerModal from '../components/Cart/StockPickerModal';
+import SealedPickerModal from '../components/Cart/SealedPickerModal';
 import { getRates } from '../lib/exchangeRates';
 import { saveTransaction, saveTransactionLine, loadTransactions } from '../lib/db';
 
@@ -29,7 +30,7 @@ function lineTotal(lines) {
 
 const PCT_OPTIONS = ['100', '95', '90', '85', '80', '75', '70', '65', '60'];
 
-function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, pct, onPctChange }) {
+function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, onAddSealed, pct, onPctChange }) {
   const isIn    = side === 'in';
   const label   = isIn ? 'COMING IN' : 'GOING OUT';
   const color   = isIn ? 'violet' : 'gray';
@@ -120,6 +121,15 @@ function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, pct, onPctC
             </Button>
           )}
           <Button
+            variant="light"
+            color="teal"
+            size="xs"
+            leftSection={<IconPackage size={13} />}
+            onClick={() => onAddSealed(side)}
+          >
+            Sealed
+          </Button>
+          <Button
             variant="subtle"
             color="gray"
             size="xs"
@@ -140,12 +150,14 @@ function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, pct, onPctC
 export default function Cart() {
   const { inLines, outLines, addLine, removeLine, updateLine, clearCart } = useCartStore();
   const { user }           = useAuthStore();
-  const { org, activeEventId, setTransactions } = useOrgStore();
+  const { org, activeEventId, setTransactions, refreshAggregates, refreshStock } = useOrgStore();
   const paymentMethods = useOrgStore((s) => s.paymentMethods);
   const [saving,           setSaving]           = useState(false);
   const [searchOpen,       setSearchOpen]       = useState(false);
   const [searchSide,       setSearchSide]       = useState('in');
   const [stockPickerOpen,  setStockPickerOpen]  = useState(false);
+  const [sealedPickerOpen, setSealedPickerOpen] = useState(false);
+  const [sealedPickerSide, setSealedPickerSide] = useState('in');
   const [inPct,            setInPct]            = useState(100);
   const [paymentMethod,    setPaymentMethod]    = useState(null);
 
@@ -240,6 +252,11 @@ export default function Cart() {
     addLine(side, { type: 'cash', qty: 1, unitPrice: 0 });
   }
 
+  function handleAddSealed(side) {
+    setSealedPickerSide(side);
+    setSealedPickerOpen(true);
+  }
+
   function handleAddBulk() {
     addLine('out', { type: 'card', cardName: 'Bulk cards', qty: 1, unitPrice: 0 });
   }
@@ -288,9 +305,10 @@ export default function Cart() {
             priceSource:         line.priceSource      ?? null,
             usdToMyrRate:        USD_TO_MYR,
             eurToMyrRate:        EUR_TO_MYR,
-            sealedProductId:     null,
-            sealedName:          line.sealedName       ?? null,
+            sealedProductId:      null,
+            sealedName:           line.sealedName        ?? null,
             sealedReferencePrice: line.sealedReferencePrice ?? null,
+            sealedCatalogId:      line.sealedCatalogId   ?? null,
           })
         )
       );
@@ -302,7 +320,11 @@ export default function Cart() {
       });
       clearCart();
       setPaymentMethod(null);
-      const refreshed = await loadTransactions(org.id);
+      const [refreshed] = await Promise.all([
+        loadTransactions(org.id),
+        refreshAggregates(org.id),
+        refreshStock(org.id),
+      ]);
       setTransactions(refreshed);
 
     } catch (err) {
@@ -334,6 +356,7 @@ export default function Cart() {
             lines={inLines}
             onAddCard={handleAddCard}
             onAddCash={handleAddCash}
+            onAddSealed={handleAddSealed}
             pct={inPct}
             onPctChange={handleInPctChange}
           />
@@ -343,6 +366,7 @@ export default function Cart() {
             onAddCard={handleAddCard}
             onAddCash={handleAddCash}
             onAddBulk={handleAddBulk}
+            onAddSealed={handleAddSealed}
           />
         </Stack>
       </ScrollArea>
@@ -368,6 +392,12 @@ export default function Cart() {
         opened={stockPickerOpen}
         onClose={() => setStockPickerOpen(false)}
         onSearchFallback={openSearchForOut}
+      />
+
+      <SealedPickerModal
+        opened={sealedPickerOpen}
+        onClose={() => setSealedPickerOpen(false)}
+        side={sealedPickerSide}
       />
     </Box>
   );

@@ -1,12 +1,9 @@
 /**
- * Derive a flat list of items currently in stock (net qty > 0).
- * Returns card items (keyed by cardExternalId) and sealed items (keyed by sealedName).
- * All monetary values in MYR.
+ * Aggregate raw per-key stock totals from transaction lines.
+ * Internal helper shared by buildStockMap / computeStockItems.
  */
-export function computeStockItems(transactions, priceOverrides = new Map()) {
-  // key → { type, meta, qtyIn, qtyOut, costIn, marketIn }
+function buildStockAggregates(transactions) {
   const map = new Map();
-
   for (const tx of transactions) {
     for (const line of tx.transactionLines ?? []) {
       if (line.type === 'card' && line.cardExternalId) {
@@ -48,9 +45,18 @@ export function computeStockItems(transactions, priceOverrides = new Map()) {
       }
     }
   }
+  return map;
+}
 
-  const items = [];
-  for (const [key, s] of map.entries()) {
+/**
+ * Derive a Map<key, item> of items currently in stock (net qty > 0).
+ * Item shape matches computeStockItems entries — use this when callers need
+ * O(1) lookup by key (CartLine stock badge, picker modals).
+ */
+export function buildStockMap(transactions, priceOverrides = new Map()) {
+  const aggregates = buildStockAggregates(transactions);
+  const map = new Map();
+  for (const [key, s] of aggregates.entries()) {
     const net = s.qtyIn - s.qtyOut;
     if (net <= 0 || s.qtyIn === 0 || !s.meta) continue;
     const ratio = net / s.qtyIn;
@@ -60,7 +66,7 @@ export function computeStockItems(transactions, priceOverrides = new Map()) {
       ? +(override.priceMyr * net).toFixed(2)
       : +(s.marketIn * ratio).toFixed(2);
     if (s.type === 'card') {
-      items.push({
+      map.set(key, {
         type:           'card',
         key,
         ...s.meta,
@@ -72,7 +78,7 @@ export function computeStockItems(transactions, priceOverrides = new Map()) {
         unrealizedGain: +(marketValue - costBasis).toFixed(2),
       });
     } else {
-      items.push({
+      map.set(key, {
         type:    'sealed',
         key,
         name:    s.meta.name,
@@ -82,15 +88,76 @@ export function computeStockItems(transactions, priceOverrides = new Map()) {
       });
     }
   }
+  return map;
+}
 
-  return items;
+/**
+ * Derive a flat list of items currently in stock (net qty > 0).
+ * Returns card items (keyed by cardExternalId) and sealed items (keyed by sealedName).
+ * All monetary values in MYR.
+ */
+export function computeStockItems(transactions, priceOverrides = new Map()) {
+  return Array.from(buildStockMap(transactions, priceOverrides).values());
+}
+
+/**
+ * Same derived-field logic as buildStockMap, but input is the already-aggregated
+ * rows returned by the get_org_stock RPC (loadStock in db.js). Each row has
+ * { type, key, name, number, setName, lang, imageUrl, qtyIn, qtyOut, costIn, marketIn }.
+ * Returns Map<key, item> with the same item shape buildStockMap produces.
+ */
+export function buildStockMapFromRows(rows, priceOverrides = new Map()) {
+  const map = new Map();
+  for (const row of rows) {
+    const qtyIn  = Number(row.qtyIn)  || 0;
+    const qtyOut = Number(row.qtyOut) || 0;
+    const net    = qtyIn - qtyOut;
+    if (net <= 0 || qtyIn === 0) continue;
+    const ratio     = net / qtyIn;
+    const costIn    = Number(row.costIn)   || 0;
+    const marketIn  = Number(row.marketIn) || 0;
+    const costBasis = +(costIn * ratio).toFixed(2);
+
+    if (row.type === 'card') {
+      const override = priceOverrides.get(row.key);
+      const marketValue = override
+        ? +(override.priceMyr * net).toFixed(2)
+        : +(marketIn * ratio).toFixed(2);
+      map.set(row.key, {
+        type:           'card',
+        key:            row.key,
+        name:           row.name     ?? '',
+        number:         row.number   ?? '',
+        setName:        row.setName  ?? '',
+        lang:           row.lang     ?? '',
+        imageUrl:       row.imageUrl ?? null,
+        qty:            net,
+        costBasis,
+        marketValue,
+        avgCost:        +(costBasis   / net).toFixed(2),
+        avgMarket:      +(marketValue / net).toFixed(2),
+        unrealizedGain: +(marketValue - costBasis).toFixed(2),
+      });
+    } else {
+      map.set(row.key, {
+        type:    'sealed',
+        key:     row.key,
+        name:    row.name ?? '',
+        qty:     net,
+        costBasis,
+        avgCost: +(costBasis / net).toFixed(2),
+      });
+    }
+  }
+  return map;
 }
 
 /**
  * Derive P&L, stock value, and per-event breakdown from saved transactions.
+ * Optionally include event misc costs and monthly fixed costs.
  * All values in MYR.
  */
-export function computeMetrics(transactions) {
+export function computeMetrics(transactions, miscCosts = [], fixedCosts = []) {
   let txCount          = 0;
   let cashIn           = 0;
   let cashOut          = 0;
@@ -99,6 +166,7 @@ export function computeMetrics(transactions) {
   let cardBuyQty       = 0;
   let cardSellQty      = 0;
   let grossProfit      = 0;
+  let cogs             = 0;
   let cardSoldTotal    = 0;
   let cardSoldWithCost = 0;
 
@@ -168,6 +236,7 @@ export function computeMetrics(transactions) {
             ev.grossProfit      += ((line.unitPriceMyr || 0) - effectiveCost) * line.qty;
             ev.cardSoldWithCost += line.qty;
             grossProfit         += ((line.unitPriceMyr || 0) - effectiveCost) * line.qty;
+            cogs                += effectiveCost * line.qty;
             cardSoldWithCost    += line.qty;
           }
         }
@@ -189,21 +258,37 @@ export function computeMetrics(transactions) {
     stockMarket += s.marketIn * ratio;
   }
 
+  // New gross profit formula: revenue + stock on hand - total purchases
+  grossProfit = totalOut + stockCost - totalIn;
+
+  // Misc costs aggregated per event
+  const miscByEvent = new Map();
+  for (const c of miscCosts) {
+    miscByEvent.set(c.eventId, (miscByEvent.get(c.eventId) ?? 0) + (c.amountMyr || 0));
+  }
+  const totalMiscCosts = [...miscByEvent.values()].reduce((a, b) => a + b, 0);
+  const totalFixedCosts = fixedCosts.reduce((s, c) => s + (c.amountMyr || 0), 0);
+
   // Per-event breakdown — newest by txCount desc, walk-ins at the end
   const eventBreakdown = [...byEvent.entries()]
-    .map(([id, d]) => ({
-      id,
-      name:    d.name ?? 'Walk-in',
-      txCount: d.txCount,
-      cashIn:  d.cashIn,
-      cashOut: d.cashOut,
-      totalIn:  d.totalIn,
-      totalOut: d.totalOut,
-      netCash:        d.cashIn - d.cashOut,
-      grossProfit:    +d.grossProfit.toFixed(2),
-      cardSoldTotal:  d.cardSoldTotal,
-      profitComplete: d.cardSoldTotal === 0 || d.cardSoldWithCost === d.cardSoldTotal,
-    }))
+    .map(([id, d]) => {
+      const miscCostTotal = +(miscByEvent.get(id) ?? 0).toFixed(2);
+      return {
+        id,
+        name:    d.name ?? 'Walk-in',
+        txCount: d.txCount,
+        cashIn:  d.cashIn,
+        cashOut: d.cashOut,
+        totalIn:  d.totalIn,
+        totalOut: d.totalOut,
+        netCashFlow:    d.cashIn - d.cashOut,
+        grossProfit:    +d.grossProfit.toFixed(2),
+        cardSoldTotal:  d.cardSoldTotal,
+        profitComplete: d.cardSoldTotal === 0 || d.cardSoldWithCost === d.cardSoldTotal,
+        miscCostTotal,
+        netPL: +(d.grossProfit - miscCostTotal).toFixed(2),
+      };
+    })
     .sort((a, b) => {
       if (a.id === '__none__') return 1;
       if (b.id === '__none__') return -1;
@@ -216,8 +301,9 @@ export function computeMetrics(transactions) {
     cashOut,
     totalIn,
     totalOut,
-    netCash:         cashIn - cashOut,
+    netCashFlow:     cashIn - cashOut,
     grossProfit:     +grossProfit.toFixed(2),
+    cogs:            +cogs.toFixed(2),
     cardSoldTotal,
     profitComplete:  cardSoldTotal === 0 || cardSoldWithCost === cardSoldTotal,
     cardBuyQty,
@@ -226,6 +312,158 @@ export function computeMetrics(transactions) {
     stockCost:       +stockCost.toFixed(2),
     stockMarket:     +stockMarket.toFixed(2),
     unrealizedGain:  +(stockMarket - stockCost).toFixed(2),
+    totalMiscCosts:  +totalMiscCosts.toFixed(2),
+    totalFixedCosts: +totalFixedCosts.toFixed(2),
+    netPL:           +(grossProfit - totalMiscCosts - totalFixedCosts).toFixed(2),
     eventBreakdown,
   };
+}
+
+/**
+ * Compute P&L for a single month using the opening/closing stock formula:
+ *   Gross Profit = Revenue − Opening Stock − Purchases + Closing Stock
+ *
+ * Opening stock = cost of all stock held at end of previous month.
+ * Closing stock = cost of all stock held at end of selected month.
+ * For the first month with data, opening stock is naturally 0.
+ */
+export function computeMonthlyPL(transactions, miscCosts, fixedCosts, events, ym) {
+  const toYM = (iso) => (iso ?? '').slice(0, 7);
+
+  function stockCostAt(endYM) {
+    const stockMap = new Map();
+    for (const tx of transactions) {
+      if (toYM(tx.createdAt) > endYM) continue;
+      for (const line of tx.transactionLines ?? []) {
+        let key;
+        if      (line.type === 'card'   && line.cardExternalId) key = `card:${line.cardExternalId}`;
+        else if (line.type === 'sealed' && line.sealedName)     key = `sealed:${line.sealedName.toLowerCase()}`;
+        else continue;
+        if (!stockMap.has(key)) stockMap.set(key, { qtyIn: 0, qtyOut: 0, costIn: 0 });
+        const s = stockMap.get(key);
+        if (line.side === 'in') { s.qtyIn += line.qty; s.costIn += (line.unitPriceMyr || 0) * line.qty; }
+        else                    { s.qtyOut += line.qty; }
+      }
+    }
+    let total = 0;
+    for (const s of stockMap.values()) {
+      const net = s.qtyIn - s.qtyOut;
+      if (net > 0 && s.qtyIn > 0) total += s.costIn * (net / s.qtyIn);
+    }
+    return total;
+  }
+
+  const [year, month] = ym.split('-').map(Number);
+  // Pure string arithmetic — avoids local-tz drift when `new Date(y, m, 1)` is converted to UTC.
+  const prevY = month === 1 ? year - 1 : year;
+  const prevM = month === 1 ? 12 : month - 1;
+  const prevYM = `${prevY}-${String(prevM).padStart(2, '0')}`;
+
+  const openingStock = stockCostAt(prevYM);
+  const closingStock = stockCostAt(ym);
+
+  const txs = transactions.filter((tx) => toYM(tx.createdAt) === ym);
+  let revenue = 0, purchases = 0, txCount = 0, cardBuyQty = 0, cardSellQty = 0;
+  for (const tx of txs) {
+    txCount++;
+    for (const line of tx.transactionLines ?? []) {
+      if (line.type !== 'card' && line.type !== 'sealed') continue;
+      const value = (line.unitPriceMyr || 0) * line.qty;
+      if (line.side === 'out') { revenue   += value; if (line.type === 'card') cardSellQty += line.qty; }
+      else                     { purchases += value; if (line.type === 'card') cardBuyQty  += line.qty; }
+    }
+  }
+
+  const grossProfit = revenue - openingStock - purchases + closingStock;
+
+  const eventMonth = new Map();
+  for (const e of events) {
+    if (e.startsAt) eventMonth.set(e.id, toYM(e.startsAt));
+  }
+  const mc = miscCosts
+    .filter((c) => (eventMonth.get(c.eventId) ?? toYM(c.createdAt)) === ym)
+    .reduce((s, c) => s + (c.amountMyr || 0), 0);
+  const fc = fixedCosts
+    .filter((c) => toYM(c.month) === ym)
+    .reduce((s, c) => s + (c.amountMyr || 0), 0);
+
+  return {
+    txCount,
+    cardBuyQty,
+    cardSellQty,
+    revenue:      +revenue.toFixed(2),
+    purchases:    +purchases.toFixed(2),
+    openingStock: +openingStock.toFixed(2),
+    closingStock: +closingStock.toFixed(2),
+    grossProfit:  +grossProfit.toFixed(2),
+    miscCosts:    +mc.toFixed(2),
+    fixedCosts:   +fc.toFixed(2),
+    netPL:        +(grossProfit - mc - fc).toFixed(2),
+  };
+}
+
+/**
+ * Build a month-by-month P&L breakdown for export.
+ * miscCosts entries are assigned to the month of their event's starts_at,
+ * falling back to the cost's own created_at.
+ * fixedCosts entries use their `month` field (YYYY-MM-01).
+ */
+export function buildMonthlyPL(transactions, miscCosts, fixedCosts, events) {
+  const toYM = (iso) => (iso ?? '').slice(0, 7); // 'YYYY-MM'
+
+  // event id → startsAt month
+  const eventMonth = new Map();
+  for (const e of events) {
+    if (e.startsAt) eventMonth.set(e.id, toYM(e.startsAt));
+  }
+
+  // collect all months present in data
+  const monthSet = new Set();
+  for (const tx of transactions) monthSet.add(toYM(tx.createdAt));
+  for (const c  of miscCosts)     monthSet.add(eventMonth.get(c.eventId) ?? toYM(c.createdAt));
+  for (const c  of fixedCosts)    monthSet.add(toYM(c.month));
+  monthSet.delete('');
+
+  const months = [...monthSet].sort();
+
+  return months.map((ym) => {
+    // transactions in this month
+    const txs = transactions.filter((tx) => toYM(tx.createdAt) === ym);
+    let sales = 0, purchases = 0, gp = 0;
+    for (const tx of txs) {
+      for (const line of tx.transactionLines ?? []) {
+        const value = (line.unitPriceMyr || 0) * line.qty;
+        if (line.type === 'card' || line.type === 'sealed') {
+          if (line.side === 'out') sales     += value;
+          else                     purchases += value;
+        }
+        if (line.type === 'card' && line.side === 'out') {
+          const effectiveCost = line.cardExternalId == null
+            ? (line.avgCostMyr ?? 0)
+            : line.avgCostMyr;
+          if (effectiveCost != null) {
+            gp += ((line.unitPriceMyr || 0) - effectiveCost) * line.qty;
+          }
+        }
+      }
+    }
+
+    const mc = miscCosts
+      .filter((c) => (eventMonth.get(c.eventId) ?? toYM(c.createdAt)) === ym)
+      .reduce((s, c) => s + (c.amountMyr || 0), 0);
+
+    const fc = fixedCosts
+      .filter((c) => toYM(c.month) === ym)
+      .reduce((s, c) => s + (c.amountMyr || 0), 0);
+
+    return {
+      month:      ym,
+      sales:      +sales.toFixed(2),
+      purchases:  +purchases.toFixed(2),
+      grossProfit: +gp.toFixed(2),
+      miscCosts:  +mc.toFixed(2),
+      fixedCosts: +fc.toFixed(2),
+      netPL:      +(gp - mc - fc).toFixed(2),
+    };
+  });
 }
