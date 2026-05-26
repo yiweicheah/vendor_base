@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Modal, Stack, Group, Text, TextInput, NumberInput, Button,
   Image, Box, ScrollArea, Divider, ActionIcon, Alert,
-  Loader, Badge,
+  Loader, Badge, SimpleGrid,
 } from '@mantine/core';
 import CurrencyInput from '../shared/CurrencyInput';
 import { notifications } from '@mantine/notifications';
@@ -175,8 +175,18 @@ export default function AddStockModal({ opened, onClose }) {
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Add Stock" size="lg" closeOnClickOutside={!saving}>
-      <Stack gap="sm">
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Add Stock"
+      size="xl"
+      closeOnClickOutside={!saving}
+      styles={{
+        content: { height: 'calc(100dvh - 5rem)', display: 'flex', flexDirection: 'column' },
+        body:    { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' },
+      }}
+    >
+      <Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
         {/* Search */}
         <Box style={{ position: 'relative' }}>
           <TextInput
@@ -225,48 +235,81 @@ export default function AddStockModal({ opened, onClose }) {
           )}
         </Box>
 
-        {/* Card list */}
+        {/* Card grid */}
         {lines.length > 0 && (
-          <ScrollArea mah={300}>
-            <Stack gap="xs">
+          <ScrollArea style={{ flex: 1, minHeight: 0 }}>
+            <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="sm">
               {lines.map((line) => (
-                <Group key={line._id} gap="sm" wrap="nowrap" align="center">
-                  {line.cardImageUrl ? (
-                    <Image src={line.cardImageUrl} w={28} h={39} radius="xs" fit="contain" style={{ flexShrink: 0 }} />
-                  ) : (
-                    <Box w={28} h={39} bg="dark.6" style={{ borderRadius: 3, flexShrink: 0 }} />
-                  )}
-                  <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
-                    <Text size="xs" fw={500} truncate>{line.cardName}</Text>
-                    <Text size="xs" c="dimmed" truncate>{[line.cardSetName, line.cardNumber, line.cardLang].filter(Boolean).join(' · ')}</Text>
+                <Stack key={line._id} gap={4}>
+                  <Box style={{ position: 'relative' }}>
+                    {line.cardImageUrl ? (
+                      <Image
+                        src={line.cardImageUrl}
+                        fit="contain"
+                        style={{ aspectRatio: '245/337', width: '100%', borderRadius: '4.4%', overflow: 'hidden' }}
+                      />
+                    ) : (
+                      <Box
+                        bg="dark.6"
+                        style={{
+                          aspectRatio: '245/337',
+                          borderRadius: '4.4%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Text size="xs" c="dimmed" ta="center" px={2} lineClamp={2}>
+                          {line.cardName ?? '—'}
+                        </Text>
+                      </Box>
+                    )}
+                    <ActionIcon
+                      style={{ position: 'absolute', top: 4, right: 4 }}
+                      size="xs" variant="filled" color="red" radius="sm"
+                      onClick={() => removeLine(line._id)}
+                      disabled={saving}
+                    >
+                      <IconX size={10} />
+                    </ActionIcon>
+                  </Box>
+                  <Stack gap={1}>
+                    <Text size="xs" fw={500} lineClamp={2}>{line.cardName}</Text>
+                    <Text size="xs" c="dimmed" truncate>
+                      {[line.cardSetName, line.cardNumber, line.cardLang].filter(Boolean).join(' · ')}
+                    </Text>
                   </Stack>
-                  <NumberInput
-                    size="xs"
-                    w={60}
-                    min={1}
-                    value={line.qty}
-                    onChange={(v) => updateLine(line._id, 'qty', v || 1)}
-                    disabled={saving}
-                  />
-                  <CurrencyInput
-                    size="xs"
-                    w={90}
-                    leftSection={<Text size="xs" c="dimmed">RM</Text>}
-                    value={line.unitPriceMyr}
-                    onChange={(v) => updateLine(line._id, 'unitPriceMyr', v)}
-                    disabled={saving}
-                  />
-                  <ActionIcon variant="subtle" color="red" size="sm" onClick={() => removeLine(line._id)} disabled={saving}>
-                    <IconX size={14} />
-                  </ActionIcon>
-                </Group>
+                  <Group gap={4} wrap="nowrap">
+                    <CurrencyInput
+                      size="xs"
+                      leftSection={<Text size="xs" c="dimmed">RM</Text>}
+                      leftSectionWidth={28}
+                      value={line.unitPriceMyr}
+                      onChange={(v) => updateLine(line._id, 'unitPriceMyr', v)}
+                      disabled={saving}
+                      style={{ flex: 1, minWidth: 0 }}
+                      styles={{ input: { textAlign: 'right' } }}
+                    />
+                    <NumberInput
+                      size="xs"
+                      min={1}
+                      value={line.qty}
+                      onChange={(v) => updateLine(line._id, 'qty', v || 1)}
+                      disabled={saving}
+                      allowDecimal={false}
+                      hideControls
+                      w={44}
+                      styles={{ input: { textAlign: 'center' } }}
+                    />
+                  </Group>
+                </Stack>
               ))}
-            </Stack>
+            </SimpleGrid>
           </ScrollArea>
         )}
 
         {lines.length === 0 && (
-          <Text size="sm" c="dimmed" ta="center" py="md">Search and add cards above.</Text>
+          <Text size="sm" c="dimmed" ta="center" py="md" style={{ flex: 1 }}>Search and add cards above.</Text>
         )}
 
         {lines.length > 0 && (

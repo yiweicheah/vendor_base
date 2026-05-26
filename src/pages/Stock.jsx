@@ -779,24 +779,14 @@ export default function Stock() {
                   allowDeselect={false}
                 />
                 {canImport && (
-                  <>
-                    <Button
-                      variant="light"
-                      size="sm"
-                      leftSection={<IconPlus size={13} />}
-                      onClick={() => setAddStockOpen(true)}
-                    >
-                      Add Stock
-                    </Button>
-                    <Button
-                      variant="light"
-                      size="sm"
-                      leftSection={<IconUpload size={13} />}
-                      onClick={() => setImportOpen(true)}
-                    >
-                      Import
-                    </Button>
-                  </>
+                  <Button
+                    variant="light"
+                    size="sm"
+                    leftSection={<IconUpload size={13} />}
+                    onClick={() => setImportOpen(true)}
+                  >
+                    Import
+                  </Button>
                 )}
                 <Group gap={4}>
                   <ActionIcon
