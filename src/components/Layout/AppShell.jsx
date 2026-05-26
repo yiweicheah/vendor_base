@@ -109,6 +109,7 @@ function OrgSwitcher({ onSwitchOrg }) {
 }
 
 export default function Shell({ view, setView, onSwitchOrg, onOpenUser, switchingOrg, children }) {
+  const dataLoading = useOrgStore((s) => s.loading);
   const [, forceRender] = useState(0);
   const { canInstall, promptInstall } = usePwaInstall();
 
@@ -177,7 +178,7 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, switchin
           position:      'relative',
         }}
       >
-        <LoadingOverlay visible={switchingOrg} zIndex={10} overlayProps={{ blur: 2 }} loaderProps={{ color: 'violet' }} />
+        <LoadingOverlay visible={switchingOrg || dataLoading} zIndex={10} overlayProps={{ blur: 2 }} loaderProps={{ color: 'violet' }} />
         <Box style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {children}
         </Box>

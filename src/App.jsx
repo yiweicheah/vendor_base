@@ -26,14 +26,25 @@ const UserPage       = lazy(() => import('./pages/User'));
 
 function MainApp({ onSwitchOrg, switchingOrg }) {
   const [view, setView] = useState('cart');
+  const [historyMounted, setHistoryMounted] = useState(false);
+
+  useEffect(() => { import('./pages/History'); }, []);
+
+  function handleSetView(v) {
+    if (v === 'history' && !historyMounted) setHistoryMounted(true);
+    setView(v);
+  }
+
   return (
-    <Shell view={view} setView={setView} onSwitchOrg={onSwitchOrg} onOpenUser={() => setView('user')} switchingOrg={switchingOrg}>
+    <Shell view={view} setView={handleSetView} onSwitchOrg={onSwitchOrg} onOpenUser={() => handleSetView('user')} switchingOrg={switchingOrg}>
       {view === 'cart'      && <CartPage />}
-      {view === 'history'   && <HistoryPage />}
+      <div style={{ display: view === 'history' ? 'flex' : 'none', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+        {historyMounted && <HistoryPage />}
+      </div>
       {view === 'dashboard' && <DashboardPage />}
       {view === 'stock'     && <StockPage />}
       {view === 'team'      && <TeamPage />}
-      {view === 'user'      && <UserPage onBack={() => setView('cart')} />}
+      {view === 'user'      && <UserPage onBack={() => handleSetView('cart')} />}
     </Shell>
   );
 }
@@ -47,6 +58,7 @@ export default function App() {
     setTransactions, setEvents, setFunds, setPaymentMethods, setActiveEventId,
     setMiscCosts, setFixedCosts, setSealedProducts,
     setMetrics, setEventBreakdown, setMonthlyPL, setStock,
+    setLoading,
     clearOrg,
   } = useOrgStore();
 
@@ -101,6 +113,7 @@ export default function App() {
         });
 
         if (initialMembership) {
+          setLoading(true);
           Promise.all([
             loadTransactions(initialMembership.org.id),
             loadEvents(initialMembership.org.id),
@@ -129,6 +142,8 @@ export default function App() {
             if (savedEventId && events.some((e) => e.id === savedEventId)) {
               setActiveEventId(savedEventId);
             }
+          }).finally(() => {
+            setLoading(false);
           });
         }
       } catch (err) {
