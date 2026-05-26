@@ -73,9 +73,17 @@ misc_per_event AS (
   FROM public.event_misc_cost
   WHERE org_id = p_org_id
   GROUP BY event_id
+),
+-- Union all distinct event_ids (including NULL for walk-ins) from both sides so
+-- we can drive with LEFT JOINs instead of FULL OUTER JOIN. FULL OUTER JOIN does
+-- not support IS NOT DISTINCT FROM (not hash/merge-joinable), but LEFT JOIN does.
+all_events AS (
+  SELECT event_id FROM tx_per_event
+  UNION
+  SELECT event_id FROM agg
 )
 SELECT
-  COALESCE(a.event_id, t.event_id)               AS event_id,
+  e.event_id                                      AS event_id,
   COALESCE(a.event_name, 'Walk-in')              AS event_name,
   COALESCE(t.n, 0)                                AS tx_count,
   COALESCE(a.cash_in,   0)                        AS cash_in,
@@ -89,12 +97,13 @@ SELECT
     OR COALESCE(a.card_sold_total, 0) = COALESCE(a.card_sold_with_cost, 0)) AS profit_complete,
   ROUND(COALESCE(m.total, 0), 2)                  AS misc_cost_total,
   ROUND(COALESCE(a.gross_profit, 0) - COALESCE(m.total, 0), 2) AS net_pl
-FROM tx_per_event t
-FULL OUTER JOIN agg a USING (event_id)
-LEFT JOIN misc_per_event m ON m.event_id = COALESCE(a.event_id, t.event_id)
+FROM all_events e
+LEFT JOIN tx_per_event t  ON t.event_id IS NOT DISTINCT FROM e.event_id
+LEFT JOIN agg a           ON a.event_id IS NOT DISTINCT FROM e.event_id
+LEFT JOIN misc_per_event m ON m.event_id IS NOT DISTINCT FROM e.event_id
 ORDER BY
-  CASE WHEN COALESCE(a.event_id, t.event_id) IS NULL THEN 1 ELSE 0 END,
-  tx_count DESC;
+  CASE WHEN e.event_id IS NULL THEN 1 ELSE 0 END,
+  COALESCE(t.n, 0) DESC;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_org_event_breakdown(uuid) TO authenticated;

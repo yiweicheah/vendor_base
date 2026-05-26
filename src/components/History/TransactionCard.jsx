@@ -8,6 +8,7 @@ import { notifications } from '@mantine/notifications';
 import {
   IconChevronDown, IconChevronUp,
   IconTrash, IconPencil, IconCheck, IconX, IconPlus,
+  IconPackage, IconStack2,
 } from '@tabler/icons-react';
 import {
   deleteTransaction, updateTransactionNotes,
@@ -16,10 +17,12 @@ import {
   updateTransactionPaymentMethod,
 } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
+import { rm } from '../../lib/format';
 import useAuthStore from '../../store/authStore';
 import useOrgStore from '../../store/orgStore';
 import SearchModal from '../Search/SearchModal';
 import CardDetailModal from '../Cards/CardDetailModal';
+import SealedPickerModal from '../Cart/SealedPickerModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,9 +38,9 @@ function formatDate(ts) {
 function classifyTransaction(lines) {
   const inLines  = lines.filter((l) => l.side === 'in');
   const outLines = lines.filter((l) => l.side === 'out');
-  const cardsIn  = inLines.some((l)  => l.type === 'card');
+  const cardsIn  = inLines.some((l)  => l.type === 'card' || l.type === 'sealed');
   const cashIn   = inLines.some((l)  => l.type === 'cash');
-  const cardsOut = outLines.some((l) => l.type === 'card');
+  const cardsOut = outLines.some((l) => l.type === 'card' || l.type === 'sealed');
   const cashOut  = outLines.some((l) => l.type === 'cash');
   if (cardsIn && cashOut && !cashIn && !cardsOut) return 'BUY';
   if (cashIn  && cardsOut && !cardsIn && !cashOut) return 'SELL';
@@ -50,7 +53,6 @@ function lineTotal(lines) {
   return lines.reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
 }
 
-function rm(n)       { return `RM ${Math.abs(n).toFixed(2)}`; }
 function sign(n)     { return n > 0.005 ? '+' : n < -0.005 ? '−' : ''; }
 function netColor(n) { return n > 0.005 ? 'green.4' : n < -0.005 ? 'red.4' : 'dimmed'; }
 
@@ -111,7 +113,7 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
               : null;
             return (
               <Text size="xs" c={pct == null ? 'dimmed' : pct >= 0 ? 'teal.4' : 'red.4'}>
-                Avg RM {line.avgCostMyr.toFixed(2)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
+                Avg {rm(line.avgCostMyr)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
               </Text>
             );
           })()}
@@ -123,7 +125,7 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
             const color = pct == null || Math.abs(pct) < 0.5 ? 'dimmed' : favorable ? 'teal.4' : 'red.4';
             return (
               <Text size="xs" c={color}>
-                Mkt RM {line.marketPriceMyr.toFixed(2)}
+                Mkt {rm(line.marketPriceMyr)}
                 {pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
               </Text>
             );
@@ -170,7 +172,7 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
         </Group>
       ) : (
         <Stack gap={1} align="flex-end" style={{ flexShrink: 0 }}>
-          <Text size="sm" fw={500}>RM {total.toFixed(2)}</Text>
+          <Text size="sm" fw={500}>{rm(total)}</Text>
           <Text size="xs" c="dimmed">×{line.qty}</Text>
         </Stack>
       )}
@@ -217,9 +219,11 @@ export default function TransactionCard({ tx, view = 'list' }) {
   const [savingN,      setSavingN]      = useState(false);
   const [deletingD,    setDeletingD]    = useState(false);
   const [deletingLine, setDeletingLine] = useState(null);
-  const [addCardOpen,  setAddCardOpen]  = useState(false);
-  const [addCardSide,  setAddCardSide]  = useState('in');
-  const [detailCard,   setDetailCard]   = useState(null); // { id, imageUrl }
+  const [addCardOpen,   setAddCardOpen]   = useState(false);
+  const [addCardSide,   setAddCardSide]   = useState('in');
+  const [addSealedOpen, setAddSealedOpen] = useState(false);
+  const [addSealedSide, setAddSealedSide] = useState('in');
+  const [detailCard,    setDetailCard]    = useState(null); // { id, imageUrl }
 
   const canEdit = role === 'owner' || role === 'admin';
 
@@ -377,6 +381,49 @@ export default function TransactionCard({ tx, view = 'list' }) {
     setEditing(false);
   }
 
+  // ─── Add sealed line ──────────────────────────────────────────────────────
+
+  async function handleSealedSelect(product) {
+    try {
+      await saveTransactionLine({
+        transactionId:        tx.id,
+        side:                 addSealedSide,
+        type:                 'sealed',
+        qty:                  1,
+        unitPriceMyr:         0,
+        sealedProductId:      null,
+        sealedName:           product.name,
+        sealedReferencePrice: product.referenceCostMyr ?? null,
+        sealedCatalogId:      product.id,
+      });
+      bumpHistory();
+      if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
+      notifications.show({ message: 'Sealed product added.', color: 'teal', autoClose: 2000 });
+    } catch (err) {
+      notifications.show({ title: 'Failed to add sealed product', message: err.message, color: 'red' });
+    }
+  }
+
+  // ─── Add bulk line ────────────────────────────────────────────────────────
+
+  async function handleAddBulk(side) {
+    try {
+      await saveTransactionLine({
+        transactionId: tx.id,
+        side,
+        type:          'card',
+        qty:           1,
+        unitPriceMyr:  0,
+        cardName:      'Bulk cards',
+      });
+      bumpHistory();
+      if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
+      notifications.show({ message: 'Bulk line added.', color: 'teal', autoClose: 2000 });
+    } catch (err) {
+      notifications.show({ title: 'Failed to add bulk', message: err.message, color: 'red' });
+    }
+  }
+
   // ─── Add card line ─────────────────────────────────────────────────────────
 
   async function handleCardSelect(cardData) {
@@ -427,7 +474,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
           <Stack gap="xs" mb={outLines.length > 0 || editing ? 'sm' : 0}>
             <Group gap="xs">
               <Text size="xs" fw={700} tt="uppercase" c="violet.4" style={{ letterSpacing: '0.08em' }}>In</Text>
-              <Text size="xs" c="dimmed">RM {lineTotal(inLines).toFixed(2)}</Text>
+              <Text size="xs" c="dimmed">{rm(lineTotal(inLines))}</Text>
             </Group>
             <Stack gap="xs">
               {inLines.map((l) => (
@@ -445,13 +492,29 @@ export default function TransactionCard({ tx, view = 'list' }) {
               ))}
             </Stack>
             {editing && (
-              <Button
-                size="xs" variant="subtle" color="violet"
-                leftSection={<IconPlus size={12} />}
-                onClick={() => { setAddCardSide('in'); setAddCardOpen(true); }}
-              >
-                Add card
-              </Button>
+              <Group gap="xs">
+                <Button
+                  size="xs" variant="subtle" color="violet"
+                  leftSection={<IconPlus size={12} />}
+                  onClick={() => { setAddCardSide('in'); setAddCardOpen(true); }}
+                >
+                  Add card
+                </Button>
+                <Button
+                  size="xs" variant="light" color="teal"
+                  leftSection={<IconPackage size={12} />}
+                  onClick={() => { setAddSealedSide('in'); setAddSealedOpen(true); }}
+                >
+                  Sealed
+                </Button>
+                <Button
+                  size="xs" variant="subtle" color="gray"
+                  leftSection={<IconStack2 size={12} />}
+                  onClick={() => handleAddBulk('in')}
+                >
+                  Bulk
+                </Button>
+              </Group>
             )}
           </Stack>
         )}
@@ -460,7 +523,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
           <Stack gap="xs">
             <Group gap="xs">
               <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>Out</Text>
-              <Text size="xs" c="dimmed">RM {lineTotal(outLines).toFixed(2)}</Text>
+              <Text size="xs" c="dimmed">{rm(lineTotal(outLines))}</Text>
             </Group>
             <Stack gap="xs">
               {outLines.map((l) => (
@@ -478,13 +541,29 @@ export default function TransactionCard({ tx, view = 'list' }) {
               ))}
             </Stack>
             {editing && (
-              <Button
-                size="xs" variant="subtle" color="gray"
-                leftSection={<IconPlus size={12} />}
-                onClick={() => { setAddCardSide('out'); setAddCardOpen(true); }}
-              >
-                Add card
-              </Button>
+              <Group gap="xs">
+                <Button
+                  size="xs" variant="subtle" color="gray"
+                  leftSection={<IconPlus size={12} />}
+                  onClick={() => { setAddCardSide('out'); setAddCardOpen(true); }}
+                >
+                  Add card
+                </Button>
+                <Button
+                  size="xs" variant="light" color="teal"
+                  leftSection={<IconPackage size={12} />}
+                  onClick={() => { setAddSealedSide('out'); setAddSealedOpen(true); }}
+                >
+                  Sealed
+                </Button>
+                <Button
+                  size="xs" variant="subtle" color="gray"
+                  leftSection={<IconStack2 size={12} />}
+                  onClick={() => handleAddBulk('out')}
+                >
+                  Bulk
+                </Button>
+              </Group>
             )}
           </Stack>
         )}
@@ -568,7 +647,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
             <Badge color={TYPE_COLOR[type]} variant="light" size="sm" style={{ flexShrink: 0 }}>
               {type}
             </Badge>
-            <Text size="sm" fw={600} truncate>RM {displayTotal.toFixed(2)}</Text>
+            <Text size="sm" fw={600} truncate>{rm(displayTotal)}</Text>
             {tx.event && (
               <Badge color="orange" variant="dot" size="sm" style={{ flexShrink: 0 }}>
                 {tx.event.name}
@@ -637,8 +716,8 @@ export default function TransactionCard({ tx, view = 'list' }) {
           <Divider my="sm" />
           {(() => {
             const sections = [
-              { label: 'In',  side: 'in',  color: 'violet.4', cardLines: inLines.filter((l)  => l.type === 'card') },
-              { label: 'Out', side: 'out', color: 'dimmed',   cardLines: outLines.filter((l) => l.type === 'card') },
+              { label: 'In',  side: 'in',  color: 'violet.4', cardLines: inLines.filter((l)  => l.type === 'card' || l.type === 'sealed') },
+              { label: 'Out', side: 'out', color: 'dimmed',   cardLines: outLines.filter((l) => l.type === 'card' || l.type === 'sealed') },
             ].filter((s) => editing || s.cardLines.length > 0);
 
             if (sections.length === 0) {
@@ -654,7 +733,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
                         {label}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        RM {lineTotal(side === 'in' ? inLines : outLines).toFixed(2)}
+                        {rm(lineTotal(side === 'in' ? inLines : outLines))}
                       </Text>
                     </Group>
 
@@ -684,7 +763,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
                                   }}
                                 >
                                   <Text size="xs" c="dimmed" ta="center" px={2} lineClamp={2}>
-                                    {l.cardName ?? '—'}
+                                    {l.cardName ?? l.sealedName ?? '—'}
                                   </Text>
                                 </Box>
                               )}
@@ -700,7 +779,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
                               )}
                             </Box>
                             <Stack gap={1}>
-                              <Text size="xs" fw={500} lineClamp={2}>{l.cardName ?? '—'}</Text>
+                              <Text size="xs" fw={500} lineClamp={2}>{l.cardName ?? l.sealedName ?? '—'}</Text>
                               {l.cardSetName && (
                                 <Text size="xs" c="dimmed" truncate>{l.cardSetName}</Text>
                               )}
@@ -733,7 +812,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
                                   />
                                 </Group>
                               ) : (
-                                <Text size="xs">RM {(l.unitPriceMyr ?? 0).toFixed(2)}</Text>
+                                <Text size="xs">{rm(l.unitPriceMyr ?? 0)}</Text>
                               )}
                               {l.marketPriceMyr != null && (() => {
                                 const pct = l.marketPriceMyr > 0
@@ -743,7 +822,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
                                 const color = pct == null || Math.abs(pct) < 0.5 ? 'dimmed' : favorable ? 'teal.4' : 'red.4';
                                 return (
                                   <Text size="xs" c={color}>
-                                    Mkt RM {l.marketPriceMyr.toFixed(2)}
+                                    Mkt {rm(l.marketPriceMyr)}
                                     {pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
                                   </Text>
                                 );
@@ -754,7 +833,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
                                   : null;
                                 return (
                                   <Text size="xs" c={pct == null ? 'dimmed' : pct >= 0 ? 'teal.4' : 'red.4'}>
-                                    Avg RM {l.avgCostMyr.toFixed(2)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
+                                    Avg {rm(l.avgCostMyr)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
                                   </Text>
                                 );
                               })()}
@@ -765,14 +844,30 @@ export default function TransactionCard({ tx, view = 'list' }) {
                     )}
 
                     {editing && (
-                      <Button
-                        size="xs" variant="subtle"
-                        color={side === 'in' ? 'violet' : 'gray'}
-                        leftSection={<IconPlus size={12} />}
-                        onClick={() => { setAddCardSide(side); setAddCardOpen(true); }}
-                      >
-                        Add card
-                      </Button>
+                      <Group gap="xs">
+                        <Button
+                          size="xs" variant="subtle"
+                          color={side === 'in' ? 'violet' : 'gray'}
+                          leftSection={<IconPlus size={12} />}
+                          onClick={() => { setAddCardSide(side); setAddCardOpen(true); }}
+                        >
+                          Add card
+                        </Button>
+                        <Button
+                          size="xs" variant="light" color="teal"
+                          leftSection={<IconPackage size={12} />}
+                          onClick={() => { setAddSealedSide(side); setAddSealedOpen(true); }}
+                        >
+                          Sealed
+                        </Button>
+                        <Button
+                          size="xs" variant="subtle" color="gray"
+                          leftSection={<IconStack2 size={12} />}
+                          onClick={() => handleAddBulk(side)}
+                        >
+                          Bulk
+                        </Button>
+                      </Group>
                     )}
                   </Stack>
                 ))}
@@ -797,6 +892,12 @@ export default function TransactionCard({ tx, view = 'list' }) {
         onClose={() => setAddCardOpen(false)}
         side={addCardSide}
         onCardSelect={handleCardSelect}
+      />
+      <SealedPickerModal
+        opened={addSealedOpen}
+        onClose={() => setAddSealedOpen(false)}
+        side={addSealedSide}
+        onPick={handleSealedSelect}
       />
       <CardDetailModal
         cardExternalId={detailCard?.id ?? null}

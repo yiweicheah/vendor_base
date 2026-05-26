@@ -34,12 +34,9 @@ import {
   createFixedCost, updateFixedCost, deleteFixedCost,
   loadTransactionsForMonth,
 } from '../lib/db';
+import { rm } from '../lib/format';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function rm(n) {
-  return `RM ${Math.abs(n).toFixed(2)}`;
-}
 
 function sign(n) {
   if (n > 0.005) return '+';
@@ -168,7 +165,7 @@ function FundHistoryModal({ opened, onClose, funds }) {
                       }
                       <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
                         <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap' }}>
-                          +RM {(f.amountMyr ?? 0).toFixed(2)}
+                          +{rm(f.amountMyr ?? 0)}
                         </Text>
                         {canEdit && (
                           <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => startEdit(f)}>
@@ -184,7 +181,7 @@ function FundHistoryModal({ opened, onClose, funds }) {
             <Divider />
             <Group justify="space-between">
               <Text size="sm" fw={600}>Total deposited</Text>
-              <Text size="sm" fw={700}>RM {total.toFixed(2)}</Text>
+              <Text size="sm" fw={700}>{rm(total)}</Text>
             </Group>
           </>
         )}
@@ -217,7 +214,7 @@ function AddFundsModal({ opened, onClose, org, user, onAdded }) {
       setAmount('');
       setNote('');
       onClose();
-      notifications.show({ message: `RM ${amt.toFixed(2)} added to funds.`, color: 'green', autoClose: 2000 });
+      notifications.show({ message: `${rm(amt)} added to funds.`, color: 'green', autoClose: 2000 });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -421,7 +418,7 @@ function EventMiscCostsModal({ event, opened, onClose, org, user }) {
                 <Text size="sm" truncate style={{ flex: 1 }}>{item.label}</Text>
                 <Group gap={4} wrap="nowrap">
                   <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap' }}>
-                    RM {(item.amountMyr ?? 0).toFixed(2)}
+                    {rm(item.amountMyr ?? 0)}
                   </Text>
                   <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => startEdit(item)}>
                     <IconPencil size={11} />
@@ -446,7 +443,7 @@ function EventMiscCostsModal({ event, opened, onClose, org, user }) {
             <Divider />
             <Group justify="space-between">
               <Text size="sm" fw={600}>Total</Text>
-              <Text size="sm" fw={700}>RM {total.toFixed(2)}</Text>
+              <Text size="sm" fw={700}>{rm(total)}</Text>
             </Group>
           </>
         )}
@@ -653,7 +650,7 @@ function FixedCostsModal({ opened, onClose, org, user }) {
                 <Text size="sm" truncate style={{ flex: 1 }}>{item.label}</Text>
                 <Group gap={4} wrap="nowrap">
                   <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap' }}>
-                    RM {(item.amountMyr ?? 0).toFixed(2)}
+                    {rm(item.amountMyr ?? 0)}
                   </Text>
                   <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => startEdit(item)}>
                     <IconPencil size={11} />
@@ -682,7 +679,7 @@ function FixedCostsModal({ opened, onClose, org, user }) {
             <Divider />
             <Group justify="space-between">
               <Text size="sm" fw={600}>Total</Text>
-              <Text size="sm" fw={700}>RM {total.toFixed(2)}</Text>
+              <Text size="sm" fw={700}>{rm(total)}</Text>
             </Group>
           </>
         )}
@@ -1117,9 +1114,10 @@ export default function Dashboard() {
   const [exportOpen,      setExportOpen]      = useState(false);
 
   const m            = metrics ?? DEFAULT_METRICS;
-  const totalFunds   = useMemo(() => funds.reduce((sum, f) => sum + (f.amountMyr ?? 0), 0), [funds]);
-  const fundOnHand   = totalFunds + m.netCashFlow;
-  const canAddFunds  = role === 'owner' || role === 'admin';
+  const totalFunds     = useMemo(() => funds.reduce((sum, f) => sum + (f.amountMyr ?? 0), 0), [funds]);
+  const opCosts        = (m.totalMiscCosts ?? 0) + (m.totalFixedCosts ?? 0);
+  const availableFunds = totalFunds + m.totalOut - m.totalIn - opCosts;
+  const canAddFunds    = role === 'owner' || role === 'admin';
 
   const nowYM = new Date().toISOString().slice(0, 7);
   const [plMonth, setPlMonth] = useState(nowYM);
@@ -1179,10 +1177,10 @@ export default function Dashboard() {
         <ScrollArea style={{ flex: 1 }} p="md">
           <Stack gap="md" pb="md">
 
-            {/* ── Cash Balance ─────────────────────────────────────────────── */}
+            {/* ── Available Funds ──────────────────────────────────────────── */}
             <Stack gap="sm">
               <Group justify="space-between" align="center">
-                <SectionLabel>Cash Balance</SectionLabel>
+                <SectionLabel>Available Funds</SectionLabel>
                 {canAddFunds && (
                   <Button
                     size="xs"
@@ -1214,19 +1212,29 @@ export default function Dashboard() {
                     </Group>
                   </Group>
                   <MetaRow
-                    label="Net from trades"
-                    value={`${sign(m.netCashFlow)}${rm(m.netCashFlow)}`}
-                    valueColor={netColor(m.netCashFlow)}
+                    label="Revenue"
+                    value={`+${rm(m.totalOut)}`}
+                    valueColor={netColor(m.totalOut)}
+                  />
+                  <MetaRow
+                    label="Purchases"
+                    value={`−${rm(m.totalIn)}`}
+                    valueColor={netColor(-m.totalIn)}
+                  />
+                  <MetaRow
+                    label="Operational costs"
+                    value={`−${rm(opCosts)}`}
+                    valueColor={netColor(-opCosts)}
                   />
                   <Divider />
                   <Group justify="space-between">
-                    <Text size="sm" fw={600}>Fund on hand</Text>
+                    <Text size="sm" fw={600}>Available funds</Text>
                     <Group gap={4}>
-                      <ThemeIcon size="xs" variant="transparent" color={netColor(fundOnHand)}>
-                        <TrendIcon value={fundOnHand} />
+                      <ThemeIcon size="xs" variant="transparent" color={netColor(availableFunds)}>
+                        <TrendIcon value={availableFunds} />
                       </ThemeIcon>
-                      <Text size="sm" fw={700} c={netColor(fundOnHand)}>
-                        {sign(fundOnHand)}{rm(fundOnHand)}
+                      <Text size="sm" fw={700} c={netColor(availableFunds)}>
+                        {sign(availableFunds)}{rm(availableFunds)}
                       </Text>
                     </Group>
                   </Group>

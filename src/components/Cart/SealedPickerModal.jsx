@@ -4,13 +4,19 @@ import {
 import { IconPackage } from '@tabler/icons-react';
 import useOrgStore from '../../store/orgStore';
 import useCartStore from '../../store/cartStore';
+import { rm } from '../../lib/format';
 
-export default function SealedPickerModal({ opened, onClose, side }) {
+export default function SealedPickerModal({ opened, onClose, side, onPick }) {
   const sealedProducts = useOrgStore((s) => s.sealedProducts);
   const sealedStockMap = useOrgStore((s) => s.stockMap);
   const { addLine }    = useCartStore();
 
   function pickProduct(product) {
+    if (onPick) {
+      onPick(product);
+      onClose();
+      return;
+    }
     const found = sealedStockMap.get(product.name.toLowerCase());
     const stock = found?.type === 'sealed' ? found : null;
     addLine(side, {
@@ -54,7 +60,7 @@ export default function SealedPickerModal({ opened, onClose, side }) {
                         <Text size="sm" fw={500}>{p.name}</Text>
                       </Group>
                       {side === 'out' && stock && (
-                        <Text size="xs" c="dimmed">avg cost RM {stock.avgCost.toFixed(2)}</Text>
+                        <Text size="xs" c="dimmed">avg cost {rm(stock.avgCost)}</Text>
                       )}
                     </Group>
                   </Paper>

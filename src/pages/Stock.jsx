@@ -41,6 +41,7 @@ import { createSealedProduct, updateSealedProduct as updateSealedProductDb, dele
 import ImportModal from "../components/Stock/ImportModal";
 import AddStockModal from "../components/Stock/AddStockModal";
 import CardDetailModal from "../components/Cards/CardDetailModal";
+import { rm } from "../lib/format";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ function GainText({ value, costBasis }) {
       : "";
   return (
     <Text size="xs" c={color}>
-      {prefix}RM {value.toFixed(2)}
+      {prefix}{rm(value)}
       {pct}
     </Text>
   );
@@ -99,7 +100,7 @@ function StockRow({ item }) {
           </Text>
         )}
         <Text size="xs" c="dimmed">
-          Avg cost RM {item.avgCost.toFixed(2)}
+          Avg cost {rm(item.avgCost)}
         </Text>
       </Stack>
 
@@ -109,7 +110,7 @@ function StockRow({ item }) {
         </Badge>
         {isCard && item.marketValue > 0 && (
           <Text size="xs" c="dimmed">
-            RM {item.marketValue.toFixed(2)}
+            {rm(item.marketValue)}
           </Text>
         )}
         {isCard && (
@@ -173,11 +174,11 @@ function StockGridItem({ item, onCardClick }) {
           {item.name}
         </Text>
         <Text size="xs" c="dimmed">
-          Cost RM {item.avgCost.toFixed(2)}
+          Cost {rm(item.avgCost)}
         </Text>
         {isCard && item.avgMarket > 0 && (
           <Text size="xs" c="dimmed">
-            Mkt RM {item.avgMarket.toFixed(2)}
+            Mkt {rm(item.avgMarket)}
           </Text>
         )}
         {isCard && (
@@ -480,7 +481,7 @@ function SealedCatalog({
                               ×{stock.qty}
                             </Badge>
                             <Text size="xs" c="dimmed">
-                              avg RM {stock.avgCost.toFixed(2)}
+                              avg {rm(stock.avgCost)}
                             </Text>
                           </Stack>
                         ) : (

@@ -10,6 +10,7 @@ import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokew
 import { tokenize, buildQuery, buildAlternateNumberQuery } from '../../lib/tokenizer';
 import { saveTransaction, saveTransactionLine, getOrCreateImportEvent } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
+import { rm, fmtMoney } from '../../lib/format';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
 
@@ -75,7 +76,7 @@ function MatchedRow({ line }) {
       </Stack>
       <Group gap="xs" style={{ flexShrink: 0 }}>
         <Badge color="violet" variant="light" size="xs">×{line.qty}</Badge>
-        <Text size="xs" c="dimmed">RM {line.unitPriceMyr.toFixed(2)}</Text>
+        <Text size="xs" c="dimmed">{rm(line.unitPriceMyr)}</Text>
       </Group>
     </Group>
   );
@@ -470,9 +471,9 @@ export default function ImportModal({ opened, onClose }) {
           {insufficient && (
             <Alert icon={<IconAlertCircle size={16} />} color="orange" variant="light">
               This import costs{' '}
-              <Text component="span" fw={600} size="sm">MYR {totalCost.toFixed(2)}</Text>
+              <Text component="span" fw={600} size="sm">MYR {fmtMoney(totalCost)}</Text>
               {' '}but current funds on hand are only{' '}
-              <Text component="span" fw={600} size="sm">MYR {fundOnHand.toFixed(2)}</Text>.
+              <Text component="span" fw={600} size="sm">MYR {fmtMoney(fundOnHand)}</Text>.
               {' '}Add funds manually before or after importing if needed.
             </Alert>
           )}

@@ -1,6 +1,7 @@
 import { Paper, Stack, Group, Text, Divider, Button, ThemeIcon, Select } from '@mantine/core';
 import { IconCheck, IconAlertCircle } from '@tabler/icons-react';
 import useOrgStore from '../../store/orgStore';
+import { rm } from '../../lib/format';
 
 export default function CartFooter({ inTotal, outTotal, onSave, saving, hasLines, hasCashIn, paymentMethod, onPaymentMethodChange }) {
   const diff              = Math.abs(inTotal - outTotal);
@@ -24,11 +25,11 @@ export default function CartFooter({ inTotal, outTotal, onSave, saving, hasLines
 
         <Group justify="space-between">
           <Text size="xs" c="dimmed">In</Text>
-          <Text size="xs" fw={500}>RM {inTotal.toFixed(2)}</Text>
+          <Text size="xs" fw={500}>{rm(inTotal)}</Text>
         </Group>
         <Group justify="space-between">
           <Text size="xs" c="dimmed">Out</Text>
-          <Text size="xs" fw={500}>RM {outTotal.toFixed(2)}</Text>
+          <Text size="xs" fw={500}>{rm(outTotal)}</Text>
         </Group>
 
         <Divider />
@@ -57,7 +58,7 @@ export default function CartFooter({ inTotal, outTotal, onSave, saving, hasLines
                 ? 'Add items to the cart'
                 : needsPaymentMethod
                 ? 'Select a payment method'
-                : `RM ${diff.toFixed(2)} off`}
+                : `${rm(diff)} off`}
             </Text>
           </Group>
         )}

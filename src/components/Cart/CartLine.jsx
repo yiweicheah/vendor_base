@@ -1,12 +1,13 @@
 import {
   Paper, Group, Stack, Text, ActionIcon,
-  Badge, Divider, Image, Box, ThemeIcon,
+  Badge, Divider, Image, Box, ThemeIcon, NumberInput,
 } from '@mantine/core';
 import CurrencyInput from '../shared/CurrencyInput';
 import {
   IconX, IconPlus, IconMinus, IconCurrencyDollar, IconPackage,
 } from '@tabler/icons-react';
 import { calcPct, pctColor } from '../../lib/pricing';
+import { rm } from '../../lib/format';
 import useCartStore from '../../store/cartStore';
 import useOrgStore from '../../store/orgStore';
 
@@ -20,13 +21,18 @@ function StockBadge({ stock }) {
 export default function CartLine({ line, side }) {
   const { removeLine, updateLine } = useCartStore();
 
-  // Stock is only relevant for card lines on the OUT side.
-  // Subscribe to just the qty number — equality is === so this only re-renders on actual qty changes.
-  const showStock = side === 'out' && line.type === 'card' && line.cardExternalId != null;
-  const stockQty = useOrgStore((s) =>
-    showStock ? (s.stockMap.get(String(line.cardExternalId))?.qty ?? 0) : null
+  const showStock = side === 'out' && (
+    (line.type === 'card'   && line.cardExternalId != null) ||
+    (line.type === 'sealed' && line.sealedName     != null)
   );
-  const stock = showStock ? stockQty : null;
+  const stockQty = useOrgStore((s) => {
+    if (!showStock) return null;
+    if (line.type === 'card')   return s.stockMap.get(String(line.cardExternalId))?.qty ?? 0;
+    if (line.type === 'sealed') return s.stockMap.get(line.sealedName.toLowerCase())?.qty ?? 0;
+    return null;
+  });
+  const stock     = showStock ? stockQty : null;
+  const overStock = stock !== null && line.qty > stock;
 
   const pct   = calcPct(line.unitPrice, line.marketPrice);
   const color = pctColor(pct, side);
@@ -53,7 +59,7 @@ export default function CartLine({ line, side }) {
               <Text size="xs" c="dimmed">auto-balance</Text>
             </Stack>
           </Group>
-          <Text size="sm" fw={600}>RM {(line.unitPrice ?? 0).toFixed(2)}</Text>
+          <Text size="sm" fw={600}>{rm(line.unitPrice ?? 0)}</Text>
         </Group>
       </Paper>
     );
@@ -133,18 +139,24 @@ export default function CartLine({ line, side }) {
                 >
                   <IconMinus size={13} />
                 </ActionIcon>
-                <Box
-                  style={{
-                    width: 40,
-                    height: 36,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1px solid var(--mantine-color-dark-4)',
+                <NumberInput
+                  value={line.qty}
+                  onChange={(val) => { if (typeof val === 'number' && val >= 1) updateLine(side, line.id, { qty: val }); }}
+                  min={1}
+                  allowDecimal={false}
+                  hideControls
+                  size="md"
+                  w={40}
+                  styles={{
+                    input: {
+                      textAlign: 'center',
+                      padding: '0 4px',
+                      borderRadius: 0,
+                      borderLeft: 'none',
+                      borderRight: 'none',
+                    },
                   }}
-                >
-                  <Text size="sm">{line.qty}</Text>
-                </Box>
+                />
                 <ActionIcon
                   variant="default"
                   size="lg"
@@ -169,10 +181,14 @@ export default function CartLine({ line, side }) {
             </Stack>
           </Group>
 
+          {overStock && (
+            <Text size="xs" c="orange.4">Qty exceeds stock ({stock} available)</Text>
+          )}
+
           {side === 'out' && line.avgCost != null && (
             <>
               <Divider variant="dashed" />
-              <Text size="xs" c="dimmed">Avg cost RM {line.avgCost.toFixed(2)}</Text>
+              <Text size="xs" c="dimmed">Avg cost {rm(line.avgCost)}</Text>
             </>
           )}
 
@@ -240,18 +256,24 @@ export default function CartLine({ line, side }) {
               >
                 <IconMinus size={13} />
               </ActionIcon>
-              <Box
-                style={{
-                  width: 40,
-                  height: 36,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: '1px solid var(--mantine-color-dark-4)',
+              <NumberInput
+                value={line.qty}
+                onChange={(val) => { if (typeof val === 'number' && val >= 1) updateLine(side, line.id, { qty: val }); }}
+                min={1}
+                allowDecimal={false}
+                hideControls
+                size="md"
+                w={40}
+                styles={{
+                  input: {
+                    textAlign: 'center',
+                    padding: '0 4px',
+                    borderRadius: 0,
+                    borderLeft: 'none',
+                    borderRight: 'none',
+                  },
                 }}
-              >
-                <Text size="sm">{line.qty}</Text>
-              </Box>
+              />
               <ActionIcon
                 variant="default"
                 size="lg"
@@ -276,17 +298,21 @@ export default function CartLine({ line, side }) {
           </Stack>
         </Group>
 
+        {overStock && (
+          <Text size="xs" c="orange.4">Qty exceeds stock ({stock} available)</Text>
+        )}
+
         {/* Row 3 — market hint */}
         <Divider variant="dashed" />
         <Group justify="space-between" align="center">
           <Stack gap={2}>
             <Text size="xs" c="dimmed">
               {line.marketPrice
-                ? `Market RM ${line.marketPrice.toFixed(2)}${line.priceSource ? ` · ${line.priceSource}` : ''}`
+                ? `Market ${rm(line.marketPrice)}${line.priceSource ? ` · ${line.priceSource}` : ''}`
                 : 'No market data'}
             </Text>
             {side === 'out' && line.avgCost != null && (
-              <Text size="xs" c="dimmed">Avg cost RM {line.avgCost.toFixed(2)}</Text>
+              <Text size="xs" c="dimmed">Avg cost {rm(line.avgCost)}</Text>
             )}
           </Stack>
           {pct != null && (

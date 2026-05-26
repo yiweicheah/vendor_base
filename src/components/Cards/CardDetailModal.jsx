@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { Modal, Stack, Text, Group, Box, Skeleton, Divider } from '@mantine/core';
 import { getCardDetail, getTcgplayerImageUrl } from '../../lib/pokewallet';
 import { getRates } from '../../lib/exchangeRates';
+import { rm } from '../../lib/format';
 
 function PriceRow({ label, value }) {
   if (value == null) return null;
   return (
     <Group justify="space-between" wrap="nowrap">
       <Text size="xs" c="dimmed">{label}</Text>
-      <Text size="xs" fw={500}>RM {value.toFixed(2)}</Text>
+      <Text size="xs" fw={500}>{rm(value)}</Text>
     </Group>
   );
 }

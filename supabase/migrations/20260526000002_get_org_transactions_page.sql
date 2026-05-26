@@ -9,7 +9,8 @@
 --   p_filter_walk_ins = true            → only transactions with no event link
 --   both NULL/false (default)           → no event filter (all events + walk-ins)
 -- Type filter ('BUY' / 'SELL' / 'TRADE') classifies each tx via the same rules as
--- classifyTx() in src/pages/History.jsx — stock-import notes always map to 'BUY'.
+-- classifyTransaction() in src/components/History/TransactionCard.jsx — sealed lines
+-- count as merchandise alongside cards; stock-import notes always map to 'BUY'.
 -- Sort options: 'date' (created_at DESC, default), 'total' (sum of line value DESC),
 -- 'unit' (max line unit price DESC). All sorts tiebreak on (created_at, id) DESC.
 --
@@ -40,10 +41,10 @@ WITH tx_aggs AS (
     t.created_by_id,
     COALESCE(SUM(tl.unit_price_myr * tl.qty), 0)::numeric                              AS total_value,
     COALESCE(MAX(tl.unit_price_myr), 0)::numeric                                       AS max_unit_price,
-    COALESCE(bool_or(tl.side = 'in'  AND tl.type = 'card'), FALSE)                     AS cards_in,
-    COALESCE(bool_or(tl.side = 'in'  AND tl.type = 'cash'), FALSE)                     AS cash_in,
-    COALESCE(bool_or(tl.side = 'out' AND tl.type = 'card'), FALSE)                     AS cards_out,
-    COALESCE(bool_or(tl.side = 'out' AND tl.type = 'cash'), FALSE)                     AS cash_out
+    COALESCE(bool_or(tl.side = 'in'  AND tl.type IN ('card','sealed')), FALSE)         AS cards_in,
+    COALESCE(bool_or(tl.side = 'in'  AND tl.type = 'cash'),              FALSE)        AS cash_in,
+    COALESCE(bool_or(tl.side = 'out' AND tl.type IN ('card','sealed')), FALSE)         AS cards_out,
+    COALESCE(bool_or(tl.side = 'out' AND tl.type = 'cash'),              FALSE)        AS cash_out
   FROM public.transaction t
   LEFT JOIN public.transaction_lines tl ON tl.transaction_id = t.id
   WHERE t.org_id = p_org_id

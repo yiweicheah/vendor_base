@@ -6,6 +6,7 @@ import {
 import { IconSearch, IconPackage } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { normalizeStr } from '../../lib/tokenizer';
+import { rm } from '../../lib/format';
 import useCartStore from '../../store/cartStore';
 import useOrgStore from '../../store/orgStore';
 
@@ -55,11 +56,11 @@ function StockTile({ item, onSelect }) {
           {[item.setName, item.number, item.lang].filter(Boolean).join(' · ')}
         </Text>
         <Text size="11px" c="teal.4" fw={500}>
-          {item.avgMarket ? `RM ${item.avgMarket.toFixed(2)}` : 'No market data'}
+          {item.avgMarket ? rm(item.avgMarket) : 'No market data'}
           {item.avgMarket ? <Text span size="10px" c="dimmed" fw={400}> · market</Text> : null}
         </Text>
         <Text size="11px" c="dimmed">
-          Cost RM {item.avgCost.toFixed(2)}
+          Cost {rm(item.avgCost)}
         </Text>
       </Box>
     </Box>

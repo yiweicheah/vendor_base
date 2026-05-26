@@ -13,6 +13,7 @@ import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import CartLine from '../components/Cart/CartLine';
 import CartFooter from '../components/Cart/CartFooter';
+import { rm } from '../lib/format';
 import EventSelector from '../components/Cart/EventSelector';
 import SearchModal from '../components/Search/SearchModal';
 import StockPickerModal from '../components/Cart/StockPickerModal';
@@ -76,7 +77,7 @@ function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, onAddSealed
                 styles={{ input: { textAlign: 'center' } }}
               />
             )}
-            <Text size="sm" fw={600}>RM {total.toFixed(2)}</Text>
+            <Text size="sm" fw={600}>{rm(total)}</Text>
           </Group>
         </Group>
 
@@ -109,17 +110,15 @@ function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, onAddSealed
           >
             Add card
           </Button>
-          {!isIn && (
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconStack2 size={13} />}
-              onClick={onAddBulk}
-            >
-              Bulk
-            </Button>
-          )}
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconStack2 size={13} />}
+            onClick={() => onAddBulk(side)}
+          >
+            Bulk
+          </Button>
           <Button
             variant="light"
             color="teal"
@@ -257,8 +256,8 @@ export default function Cart() {
     setSealedPickerOpen(true);
   }
 
-  function handleAddBulk() {
-    addLine('out', { type: 'card', cardName: 'Bulk cards', qty: 1, unitPrice: 0 });
+  function handleAddBulk(side) {
+    addLine(side, { type: 'card', cardName: 'Bulk cards', qty: 1, unitPrice: 0 });
   }
 
   async function handleSave() {
@@ -355,6 +354,7 @@ export default function Cart() {
             lines={inLines}
             onAddCard={handleAddCard}
             onAddCash={handleAddCash}
+            onAddBulk={handleAddBulk}
             onAddSealed={handleAddSealed}
             pct={inPct}
             onPctChange={handleInPctChange}

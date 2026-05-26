@@ -10,6 +10,7 @@ import { IconSearch, IconX, IconPlus, IconAlertCircle } from '@tabler/icons-reac
 import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokewallet';
 import { saveTransaction, saveTransactionLine, getOrCreateImportEvent } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
+import { rm, fmtMoney } from '../../lib/format';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
 
@@ -316,15 +317,15 @@ export default function AddStockModal({ opened, onClose }) {
             <Divider />
             <Group justify="space-between">
               <Text size="sm" c="dimmed">Total</Text>
-              <Text size="sm" fw={600}>RM {totalCost.toFixed(2)}</Text>
+              <Text size="sm" fw={600}>{rm(totalCost)}</Text>
             </Group>
 
             {insufficient && (
               <Alert icon={<IconAlertCircle size={16} />} color="orange" variant="light">
                 This purchase costs{' '}
-                <Text component="span" fw={600} size="sm">MYR {totalCost.toFixed(2)}</Text>
+                <Text component="span" fw={600} size="sm">MYR {fmtMoney(totalCost)}</Text>
                 {' '}but current funds on hand are only{' '}
-                <Text component="span" fw={600} size="sm">MYR {fundOnHand.toFixed(2)}</Text>.
+                <Text component="span" fw={600} size="sm">MYR {fmtMoney(fundOnHand)}</Text>.
                 {' '}Add funds manually if needed.
               </Alert>
             )}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Box, Text, Overlay, Center, Loader } from '@mantine/core';
 import { getTcgplayerImageUrl, extractPrice } from '../../lib/pokewallet';
+import { rm } from '../../lib/format';
 
 export default function CardTile({ card, onSelect }) {
   const [selecting, setSelecting] = useState(false);
@@ -71,7 +72,7 @@ export default function CardTile({ card, onSelect }) {
         </Text>
         {priceInfo && (
           <Text size="11px" c="teal.4" fw={500}>
-            RM {priceInfo.myr.toFixed(2)}
+            {rm(priceInfo.myr)}
             <Text span size="10px" c="dimmed" fw={400}> · {priceInfo.source}</Text>
           </Text>
         )}
