@@ -22,6 +22,7 @@ import {
   IconSearch,
   IconPackage,
   IconUpload,
+  IconDownload,
   IconLayoutList,
   IconLayoutGrid,
   IconRefresh,
@@ -714,6 +715,103 @@ export default function Stock() {
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
   const totalUnits = cardItems.reduce((sum, i) => sum + i.qty, 0);
 
+  function handleExportCsv() {
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const row = (...fields) => fields.map(esc).join(",");
+
+    // Always export full org stock — ignore event filter and search.
+    const items = Array.from(
+      buildStockMapFromRows(stock, priceOverrides).values(),
+    );
+
+    items.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "card" ? -1 : 1;
+      if (a.type === "card") {
+        return (
+          (a.setName || "").localeCompare(b.setName || "") ||
+          (a.name || "").localeCompare(b.name || "") ||
+          (a.number || "").localeCompare(b.number || "")
+        );
+      }
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
+    const lines = [];
+    lines.push(row("Company", org?.name ?? ""));
+    lines.push(row("Report", "Stock Export"));
+    lines.push(row("Exported", new Date().toISOString()));
+    lines.push(row("Currency", "MYR"));
+    lines.push("");
+    lines.push(
+      row(
+        "Type",
+        "Name",
+        "Number",
+        "Set",
+        "Language",
+        "Quantity",
+        "AvgCost",
+        "AvgMarket",
+        "CostBasis",
+        "MarketValue",
+        "UnrealizedGain",
+        "ImageUrl",
+        "Key",
+      ),
+    );
+
+    for (const it of items) {
+      if (it.type === "card") {
+        lines.push(
+          row(
+            "card",
+            it.name,
+            it.number,
+            it.setName,
+            it.lang,
+            it.qty,
+            it.avgCost.toFixed(2),
+            it.avgMarket.toFixed(2),
+            it.costBasis.toFixed(2),
+            it.marketValue.toFixed(2),
+            it.unrealizedGain.toFixed(2),
+            it.imageUrl ?? "",
+            it.key,
+          ),
+        );
+      } else {
+        lines.push(
+          row(
+            "sealed",
+            it.name,
+            "",
+            "",
+            "",
+            it.qty,
+            it.avgCost.toFixed(2),
+            "",
+            it.costBasis.toFixed(2),
+            "",
+            "",
+            "",
+            it.key,
+          ),
+        );
+      }
+    }
+
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `stock_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <Box
       style={{
@@ -788,6 +886,16 @@ export default function Stock() {
                     Import
                   </Button>
                 )}
+                <Button
+                  variant="light"
+                  color="teal"
+                  size="sm"
+                  leftSection={<IconDownload size={13} />}
+                  onClick={handleExportCsv}
+                  disabled={stock.length === 0}
+                >
+                  Export
+                </Button>
                 <Group gap={4}>
                   <ActionIcon
                     variant={view === "list" ? "light" : "subtle"}

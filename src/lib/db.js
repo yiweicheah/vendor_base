@@ -182,37 +182,70 @@ export async function loadStock(orgId, { eventId } = {}) {
 
 // ─── Transactions ─────────────────────────────────────────────────────────────
 
-export async function loadTransactions(orgId) {
-  try {
-    const { data, error } = await supabase
-      .from('transaction')
-      .select(`
-        id,
-        created_at,
-        notes,
-        payment_method,
-        created_by:user!created_by_id(display_name),
-        event:event!event_id(id, name),
-        transaction_lines(
-          id, side, type,
-          card_external_id, card_name, card_number, card_set_name, card_lang, card_image_url,
-          avg_cost_myr,
-          market_price_myr, price_source,
-          sealed_name, sealed_reference_price, sealed_catalog_id,
-          qty, unit_price_myr
-        )
-      `)
-      .eq('org_id', orgId)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(200);
+/**
+ * Paginated transaction list for the History page. Filters, sort, and pagination
+ * run server-side via the get_org_transactions_page RPC — the client never holds
+ * the full transactions array. Pass null for any filter to disable it; eventId
+ * '__none__' maps to the walk-in-only filter.
+ *
+ * Returns { rows, totalCount }. Each row matches the camelCase shape of
+ * loadTransactions() entries (id, createdAt, notes, paymentMethod, event,
+ * createdBy, transactionLines).
+ */
+export async function loadTransactionsPage(orgId, {
+  eventId = null,
+  type = null,             // 'BUY' | 'SELL' | 'TRADE'
+  creatorName = null,
+  paymentMethod = null,
+  sort = 'date',           // 'date' | 'total' | 'unit'
+  offset = 0,
+  limit = 20,
+} = {}) {
+  const params = {
+    p_org_id:          orgId,
+    p_event_id:        eventId === '__none__' ? null : eventId,
+    p_filter_walk_ins: eventId === '__none__',
+    p_type:            type,
+    p_creator_name:    creatorName,
+    p_payment_method:  paymentMethod,
+    p_sort:            sort,
+    p_offset:          offset,
+    p_limit:           limit,
+  };
+  const { data, error } = await supabase.rpc('get_org_transactions_page', params);
+  if (error) throw error;
+  const payload = toCamel(data ?? { rows: [], total_count: 0 });
+  return { rows: payload.rows ?? [], totalCount: payload.totalCount ?? 0 };
+}
 
-    if (error) throw error;
-    return toCamel(data ?? []);
-  } catch (err) {
-    console.error('loadTransactions error:', err);
-    return [];
-  }
+/**
+ * All transactions (with lines) in the given UTC calendar month for an org.
+ * Powers the Export P&L modal on the Dashboard, which writes per-line CSV rows.
+ * `ym` is a 'YYYY-MM' string matching JS's `tx.createdAt.slice(0, 7)`.
+ */
+export async function loadTransactionsForMonth(orgId, ym) {
+  const { data, error } = await supabase.rpc('get_org_transactions_for_month', {
+    p_org_id:     orgId,
+    p_year_month: ym,
+  });
+  if (error) throw error;
+  return toCamel(data ?? []);
+}
+
+/**
+ * Distinct creator display names + payment methods present in the org's
+ * non-deleted transactions. Powers the History filter dropdowns. Also returns
+ * `hasAny` so History can distinguish empty-org from filtered-empty.
+ */
+export async function loadHistoryFilterOptions(orgId) {
+  const { data, error } = await supabase.rpc('get_org_history_filter_options', { p_org_id: orgId });
+  if (error) throw error;
+  const payload = toCamel(data ?? {});
+  return {
+    creators:       payload.creators       ?? [],
+    paymentMethods: payload.paymentMethods ?? [],
+    hasAny:         payload.hasAny         ?? false,
+  };
 }
 
 export async function saveTransaction({ orgId, createdById, notes, eventId, paymentMethod }) {

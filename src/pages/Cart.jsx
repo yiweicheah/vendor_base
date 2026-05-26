@@ -18,7 +18,7 @@ import SearchModal from '../components/Search/SearchModal';
 import StockPickerModal from '../components/Cart/StockPickerModal';
 import SealedPickerModal from '../components/Cart/SealedPickerModal';
 import { getRates } from '../lib/exchangeRates';
-import { saveTransaction, saveTransactionLine, loadTransactions } from '../lib/db';
+import { saveTransaction, saveTransactionLine } from '../lib/db';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -150,7 +150,7 @@ function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, onAddSealed
 export default function Cart() {
   const { inLines, outLines, addLine, removeLine, updateLine, clearCart } = useCartStore();
   const { user }           = useAuthStore();
-  const { org, activeEventId, setTransactions, refreshAggregates, refreshStock } = useOrgStore();
+  const { org, activeEventId, bumpHistoryRev, refreshAggregates, refreshStock } = useOrgStore();
   const paymentMethods = useOrgStore((s) => s.paymentMethods);
   const [saving,           setSaving]           = useState(false);
   const [searchOpen,       setSearchOpen]       = useState(false);
@@ -320,12 +320,11 @@ export default function Cart() {
       });
       clearCart();
       setPaymentMethod(null);
-      const [refreshed] = await Promise.all([
-        loadTransactions(org.id),
+      bumpHistoryRev();
+      await Promise.all([
         refreshAggregates(org.id),
         refreshStock(org.id),
       ]);
-      setTransactions(refreshed);
 
     } catch (err) {
       console.error('Save transaction error:', err);

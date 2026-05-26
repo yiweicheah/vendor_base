@@ -1,13 +1,18 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  Box, ScrollArea, Stack, Text, Center, ThemeIcon,
+  Box, ScrollArea, Stack, Text, Center, ThemeIcon, Loader, LoadingOverlay,
   Group, ActionIcon, Select, Modal, TextInput, Button, Pagination,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconHistory, IconLayoutList, IconLayoutGrid, IconPencil, IconTrash } from '@tabler/icons-react';
 import useOrgStore from '../store/orgStore';
 import TransactionCard from '../components/History/TransactionCard';
-import { updateEvent as updateEventDb, deleteEvent as deleteEventDb } from '../lib/db';
+import {
+  updateEvent as updateEventDb,
+  deleteEvent as deleteEventDb,
+  loadTransactionsPage,
+  loadHistoryFilterOptions,
+} from '../lib/db';
 
 function formatEventDates(startsAt, endsAt) {
   if (!startsAt) return null;
@@ -98,7 +103,6 @@ const PAGE_SIZE_GRID = 12;
 const SORT_OPTIONS = [
   { value: 'date',  label: 'Date' },
   { value: 'total', label: 'Total value' },
-  { value: 'unit',  label: 'Unit price' },
 ];
 
 const TYPE_FILTER_OPTIONS = [
@@ -108,37 +112,20 @@ const TYPE_FILTER_OPTIONS = [
   { value: 'TRADE', label: 'Trade' },
 ];
 
-function lineTotal(lines) {
-  return lines.reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
-}
-
-function maxUnitPrice(lines) {
-  return lines.reduce((m, l) => Math.max(m, l.unitPriceMyr || 0), 0);
-}
-
-function classifyTx(tx) {
-  if (tx.notes?.startsWith('Stock import') || tx.notes?.startsWith('Stock addition')) return 'BUY';
-  const lines    = tx.transactionLines ?? [];
-  const inLines  = lines.filter((l) => l.side === 'in');
-  const outLines = lines.filter((l) => l.side === 'out');
-  const cardsIn  = inLines.some((l)  => l.type === 'card');
-  const cashIn   = inLines.some((l)  => l.type === 'cash');
-  const cardsOut = outLines.some((l) => l.type === 'card');
-  const cashOut  = outLines.some((l) => l.type === 'cash');
-  if (cardsIn && cashOut && !cashIn && !cardsOut) return 'BUY';
-  if (cashIn  && cardsOut && !cardsIn && !cashOut) return 'SELL';
-  return 'TRADE';
-}
-
 
 export default function History() {
-  const transactions  = useOrgStore((s) => s.transactions);
+  const org           = useOrgStore((s) => s.org);
   const events        = useOrgStore((s) => s.events);
   const role          = useOrgStore((s) => s.role);
+  const historyRev         = useOrgStore((s) => s.historyRev);
+  const filterOptionsRev   = useOrgStore((s) => s.filterOptionsRev);
   const updateEventInStore = useOrgStore((s) => s.updateEvent);
   const removeEventInStore = useOrgStore((s) => s.removeEvent);
   const [view, setViewRaw]              = useState(() => localStorage.getItem('history_view')            ?? 'list');
-  const [sort, setSortRaw]              = useState(() => localStorage.getItem('history_sort')            ?? 'date');
+  const [sort, setSortRaw]              = useState(() => {
+    const stored = localStorage.getItem('history_sort');
+    return SORT_OPTIONS.some((o) => o.value === stored) ? stored : 'date';
+  });
   const [eventFilter, setFilterRaw]     = useState(() => localStorage.getItem('history_event_filter')   ?? 'all');
   const [typeFilter, setTypeFilterRaw]  = useState(() => localStorage.getItem('history_type_filter')    ?? 'all');
   const [creatorFilter, setCreatorFilterRaw]   = useState(() => localStorage.getItem('history_creator_filter')  ?? 'all');
@@ -150,14 +137,76 @@ export default function History() {
   const [deletingEvent, setDeletingEvent] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const canEdit = role === 'owner' || role === 'admin';
+  const [pageData, setPageData] = useState({ rows: [], totalCount: 0 });
+  const [pageLoading, setPageLoading] = useState(false);
+  const [filterOptions, setFilterOptions] = useState({ creators: [], paymentMethods: [], hasAny: false });
+  // null until first successful/failed load for the current org — gates the initial spinner only
+  const [optionsLoadedForOrg, setOptionsLoadedForOrg] = useState(null);
 
-  function setView(v)          { setViewRaw(v);           localStorage.setItem('history_view', v); }
+  const canEdit = role === 'owner' || role === 'admin';
+  const pageSize = view === 'grid' ? PAGE_SIZE_GRID : PAGE_SIZE_LIST;
+
+  function setView(v)          { setViewRaw(v);           localStorage.setItem('history_view', v);           setPage(1); }
   function setSort(v)          { setSortRaw(v);           localStorage.setItem('history_sort', v);           setPage(1); }
   function setEventFilter(v)   { setFilterRaw(v);         localStorage.setItem('history_event_filter', v);   setPage(1); }
   function setTypeFilter(v)    { setTypeFilterRaw(v);     localStorage.setItem('history_type_filter', v);    setPage(1); }
   function setCreatorFilter(v) { setCreatorFilterRaw(v);  localStorage.setItem('history_creator_filter', v); setPage(1); }
   function setPaymentFilter(v) { setPaymentFilterRaw(v);  localStorage.setItem('history_payment_filter', v); setPage(1); }
+
+  // ─── Server-side data fetching ─────────────────────────────────────────────
+  const orgId = org?.id ?? null;
+
+  // Filter options: refetch on org change or when creators/payment methods could have changed.
+  // Uses filterOptionsRev (not historyRev) so inline edits (notes, event tag, line prices)
+  // don't trigger a redundant DB round-trip.
+  // The full-page spinner only blocks on the very first load per org; subsequent refetches
+  // happen silently in the background.
+  useEffect(() => {
+    if (!orgId) return;
+    let cancelled = false;
+    loadHistoryFilterOptions(orgId)
+      .then((opts) => { if (!cancelled) setFilterOptions(opts); })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('loadHistoryFilterOptions error:', err);
+        notifications.show({ title: 'Failed to load history', message: err.message, color: 'red' });
+      })
+      .finally(() => { if (!cancelled) setOptionsLoadedForOrg(orgId); });
+    return () => { cancelled = true; };
+  }, [orgId, filterOptionsRev]);
+
+  // Page: refetch on any filter/sort/page change or transaction-set mutation.
+  // If the underlying count dropped (e.g. last item on the current page deleted),
+  // clamp `page` to the new total in the same setState batch as setPageData.
+  useEffect(() => {
+    if (!orgId) return;
+    let cancelled = false;
+    setPageLoading(true);
+    loadTransactionsPage(orgId, {
+      eventId:       eventFilter === 'all' ? null : eventFilter,
+      type:          typeFilter   === 'all' ? null : typeFilter,
+      creatorName:   creatorFilter === 'all' ? null : creatorFilter,
+      paymentMethod: paymentFilter === 'all' ? null : paymentFilter,
+      sort,
+      offset:        (page - 1) * pageSize,
+      limit:         pageSize,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setPageData(result);
+        const newTotal = Math.max(1, Math.ceil(result.totalCount / pageSize));
+        if (page > newTotal) setPage(newTotal);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('loadTransactionsPage error:', err);
+        notifications.show({ title: 'Failed to load transactions', message: err.message, color: 'red' });
+      })
+      .finally(() => { if (!cancelled) setPageLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId, eventFilter, typeFilter, creatorFilter, paymentFilter, sort, page, pageSize, historyRev]);
+
+  const totalPages = Math.max(1, Math.ceil(pageData.totalCount / pageSize));
 
   async function handleDeleteConfirm() {
     if (!deletingEvent) return;
@@ -181,57 +230,44 @@ export default function History() {
     ...events.map((e) => ({ value: e.id, label: e.name, startsAt: e.startsAt, endsAt: e.endsAt })),
   ], [events]);
 
+  // If the user previously selected a creator/payment that's no longer present
+  // in the org's history (e.g. the last matching tx was deleted), keep the chip
+  // in the dropdown so the Mantine Select doesn't render an invalid value. The
+  // server will simply return 0 rows; the user can switch back to 'all'.
   const creatorOptions = useMemo(() => {
-    const names = [...new Set(transactions.map((tx) => tx.createdBy?.displayName).filter(Boolean))].sort();
-    return [{ value: 'all', label: 'All members' }, ...names.map((n) => ({ value: n, label: n }))];
-  }, [transactions]);
+    const opts = [{ value: 'all', label: 'All members' }, ...filterOptions.creators.map((n) => ({ value: n, label: n }))];
+    if (creatorFilter !== 'all' && !filterOptions.creators.includes(creatorFilter)) {
+      opts.push({ value: creatorFilter, label: creatorFilter });
+    }
+    return opts;
+  }, [filterOptions.creators, creatorFilter]);
 
   const paymentOptions = useMemo(() => {
-    const methods = [...new Set(transactions.map((tx) => tx.paymentMethod).filter(Boolean))].sort();
-    return [{ value: 'all', label: 'All payments' }, ...methods.map((m) => ({ value: m, label: m }))];
-  }, [transactions]);
+    const opts = [{ value: 'all', label: 'All payments' }, ...filterOptions.paymentMethods.map((m) => ({ value: m, label: m }))];
+    if (paymentFilter !== 'all' && !filterOptions.paymentMethods.includes(paymentFilter)) {
+      opts.push({ value: paymentFilter, label: paymentFilter });
+    }
+    return opts;
+  }, [filterOptions.paymentMethods, paymentFilter]);
 
   const selectedEvent = useMemo(
     () => (eventFilter !== 'all' && eventFilter !== '__none__') ? events.find((e) => e.id === eventFilter) ?? null : null,
     [eventFilter, events],
   );
 
-  const sorted = useMemo(() => {
-    const copy = [...transactions];
-    if (sort === 'total') {
-      copy.sort((a, b) => {
-        const aLines = a.transactionLines ?? [];
-        const bLines = b.transactionLines ?? [];
-        return lineTotal(bLines) - lineTotal(aLines);
-      });
-    } else if (sort === 'unit') {
-      copy.sort((a, b) => {
-        const aLines = a.transactionLines ?? [];
-        const bLines = b.transactionLines ?? [];
-        return maxUnitPrice(bLines) - maxUnitPrice(aLines);
-      });
-    } else {
-      copy.sort((a, b) => b.createdAt - a.createdAt);
-    }
-    return copy;
-  }, [transactions, sort]);
+  const handleRowsScrollTop = useCallback(() => {
+    viewportRef.current?.scrollTo({ top: 0 });
+  }, []);
 
-  const displayed = useMemo(() => {
-    let result = sorted;
-    if (eventFilter === '__none__') result = result.filter((tx) => tx.event == null);
-    else if (eventFilter !== 'all') result = result.filter((tx) => tx.event?.id === eventFilter);
-    if (typeFilter    !== 'all') result = result.filter((tx) => classifyTx(tx) === typeFilter);
-    if (creatorFilter !== 'all') result = result.filter((tx) => (tx.createdBy?.displayName ?? null) === creatorFilter);
-    if (paymentFilter !== 'all') result = result.filter((tx) => tx.paymentMethod === paymentFilter);
-    return result;
-  }, [sorted, eventFilter, typeFilter, creatorFilter, paymentFilter]);
+  if (optionsLoadedForOrg !== orgId) {
+    return (
+      <Center h="100%">
+        <Loader color="violet" size="md" />
+      </Center>
+    );
+  }
 
-
-  const pageSize   = view === 'grid' ? PAGE_SIZE_GRID : PAGE_SIZE_LIST;
-  const totalPages = Math.ceil(displayed.length / pageSize);
-  const paged      = displayed.slice((page - 1) * pageSize, page * pageSize);
-
-  if (transactions.length === 0) {
+  if (!filterOptions.hasAny) {
     return (
       <Center h="100%">
         <Stack align="center" gap="md">
@@ -386,25 +422,35 @@ export default function History() {
             )}
           </Group>
 
-          {displayed.length === 0 ? (
+          {pageData.rows.length === 0 ? (
             <Center py="xl">
-              <Text c="dimmed" size="sm">No transactions for this filter</Text>
+              {pageLoading
+                ? <Loader color="violet" size="sm" />
+                : <Text c="dimmed" size="sm">No transactions for this filter</Text>}
             </Center>
           ) : (
-            <Stack gap="sm">
-              {paged.map((tx) => (
-                <TransactionCard key={tx.id} tx={tx} view={view} />
-              ))}
-              {totalPages > 1 && (
-                <Pagination
-                  value={page}
-                  onChange={(p) => { setPage(p); viewportRef.current?.scrollTo({ top: 0 }); }}
-                  total={totalPages}
-                  size="sm"
-                  color="violet"
-                />
-              )}
-            </Stack>
+            <Box pos="relative" mih={120}>
+              <LoadingOverlay
+                visible={pageLoading}
+                zIndex={2}
+                overlayProps={{ blur: 1, backgroundOpacity: 0.35 }}
+                loaderProps={{ color: 'violet', size: 'sm' }}
+              />
+              <Stack gap="sm">
+                {pageData.rows.map((tx) => (
+                  <TransactionCard key={tx.id} tx={tx} view={view} />
+                ))}
+                {totalPages > 1 && (
+                  <Pagination
+                    value={page}
+                    onChange={(p) => { setPage(p); handleRowsScrollTop(); }}
+                    total={totalPages}
+                    size="sm"
+                    color="violet"
+                  />
+                )}
+              </Stack>
+            </Box>
           )}
 
         </Stack>

@@ -1,6 +1,6 @@
-import { useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
-  Box, ScrollArea, Stack, Paper, Group, Text, Divider,
+  Box, ScrollArea, Stack, Paper, Group, Text, Divider, Loader,
   ThemeIcon, Center, Button, Modal, TextInput, ActionIcon,
   Select, Pagination, Table, ScrollArea as SA,
 } from '@mantine/core';
@@ -32,6 +32,7 @@ import {
   createFundEntry, updateFundEntry,
   createEventMiscCost, updateEventMiscCost, deleteEventMiscCost,
   createFixedCost, updateFixedCost, deleteFixedCost,
+  loadTransactionsForMonth,
 } from '../lib/db';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -692,22 +693,39 @@ function FixedCostsModal({ opened, onClose, org, user }) {
 
 // ─── Export P&L modal ─────────────────────────────────────────────────────────
 
-function ExportPLModal({ opened, onClose, transactions, miscCosts, fixedCosts, events, monthlyPL }) {
+function ExportPLModal({ opened, onClose, miscCosts, fixedCosts, events, monthlyPL }) {
   const org = useOrgStore((s) => s.org);
   const toYM   = (iso) => (iso ?? '').slice(0, 7);
   const toDate = (iso) => (iso ?? '').slice(0, 10);
 
-  const allMonths = useMemo(() => {
-    const s = new Set();
-    for (const tx of transactions) s.add(toYM(tx.createdAt));
-    for (const c  of miscCosts)    s.add(toYM(c.createdAt));
-    for (const c  of fixedCosts)   s.add(toYM(c.month));
-    s.delete('');
-    return [...s].sort().reverse();
-  }, [transactions, miscCosts, fixedCosts]);
-
+  // Month list comes from monthlyPL — get_org_monthly_pl already unions tx, misc, and fixed
+  // cost months server-side, so this is the authoritative set.
+  const allMonths = useMemo(
+    () => [...new Set(monthlyPL.map((r) => r.month))].filter(Boolean).sort().reverse(),
+    [monthlyPL],
+  );
   const monthOptions = allMonths.map((ym) => ({ value: ym, label: monthLabel(ym) }));
   const [selectedMonth, setSelectedMonth] = useState(() => allMonths[0] ?? '');
+
+  // Lazy-fetch transactions for the selected month — only the chosen month is loaded,
+  // not the global transactions blob. Re-runs when the user picks a different month.
+  const [filteredTxs, setFilteredTxs] = useState([]);
+  const [txLoading, setTxLoading] = useState(false);
+  useEffect(() => {
+    if (!opened || !selectedMonth || !org?.id) return;
+    let cancelled = false;
+    setTxLoading(true);
+    loadTransactionsForMonth(org.id, selectedMonth)
+      .then((rows) => { if (!cancelled) setFilteredTxs(rows); })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('loadTransactionsForMonth error:', err);
+        notifications.show({ title: 'Failed to load month', message: err.message, color: 'red' });
+        setFilteredTxs([]);
+      })
+      .finally(() => { if (!cancelled) setTxLoading(false); });
+    return () => { cancelled = true; };
+  }, [opened, selectedMonth, org?.id]);
 
   // event id → startsAt month / date
   const eventMonth = useMemo(() => {
@@ -723,11 +741,6 @@ function ExportPLModal({ opened, onClose, transactions, miscCosts, fixedCosts, e
   }, [events]);
 
   // ── filtered slices ──────────────────────────────────────────────────────
-
-  const filteredTxs = useMemo(() => {
-    if (!selectedMonth) return [];
-    return transactions.filter((tx) => toYM(tx.createdAt) === selectedMonth);
-  }, [transactions, selectedMonth]);
 
   const filteredMiscCosts = useMemo(() => {
     if (!selectedMonth) return [];
@@ -827,7 +840,9 @@ function ExportPLModal({ opened, onClose, transactions, miscCosts, fixedCosts, e
           size="xs"
         />
 
-        {!hasData ? (
+        {txLoading ? (
+          <Center py="sm"><Loader color="violet" size="sm" /></Center>
+        ) : !hasData ? (
           <Text size="xs" c="dimmed" ta="center" py="sm">No data for selected month.</Text>
         ) : (
           <Table withTableBorder withColumnBorders fz="xs">
@@ -885,7 +900,7 @@ function ExportPLModal({ opened, onClose, transactions, miscCosts, fixedCosts, e
 
         <Button
           leftSection={<IconDownload size={14} />}
-          disabled={!hasData}
+          disabled={!hasData || txLoading}
           onClick={handleExport}
         >
           Download CSV
@@ -1084,7 +1099,6 @@ function ByEventSection({ breakdown, events, canEdit, onManageCosts, org, user }
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const transactions    = useOrgStore((s) => s.transactions);
   const funds           = useOrgStore((s) => s.funds);
   const org             = useOrgStore((s) => s.org);
   const role            = useOrgStore((s) => s.role);
@@ -1121,7 +1135,7 @@ export default function Dashboard() {
 
   const mpl = monthlyPL.find((r) => r.month === effectivePlMonth) ?? DEFAULT_MPL;
 
-  const hasContent = transactions.length > 0 || funds.length > 0;
+  const hasContent = (metrics?.txCount ?? 0) > 0 || funds.length > 0;
   if (!hasContent) {
     return (
       <>
@@ -1221,7 +1235,7 @@ export default function Dashboard() {
             </Stack>
 
             {/* ── P&L Summary ──────────────────────────────────────────────── */}
-            {transactions.length > 0 && (
+            {(metrics?.txCount ?? 0) > 0 && (
               <Stack gap="sm">
                 <Group justify="space-between" align="center">
                   <Group gap={6} align="center">
@@ -1390,7 +1404,6 @@ export default function Dashboard() {
       <ExportPLModal
         opened={exportOpen}
         onClose={() => setExportOpen(false)}
-        transactions={transactions}
         miscCosts={miscCosts}
         fixedCosts={fixedCosts}
         events={events}

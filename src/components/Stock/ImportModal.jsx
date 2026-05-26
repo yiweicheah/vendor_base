@@ -8,7 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { IconUpload, IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokewallet';
 import { tokenize, buildQuery, buildAlternateNumberQuery } from '../../lib/tokenizer';
-import { saveTransaction, saveTransactionLine, loadTransactions, getOrCreateImportEvent } from '../../lib/db';
+import { saveTransaction, saveTransactionLine, getOrCreateImportEvent } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
@@ -87,7 +87,7 @@ export default function ImportModal({ opened, onClose }) {
   const org                = useOrgStore((s) => s.org);
   const events             = useOrgStore((s) => s.events);
   const addEvent           = useOrgStore((s) => s.addEvent);
-  const setTransactions    = useOrgStore((s) => s.setTransactions);
+  const bumpHistoryRev     = useOrgStore((s) => s.bumpHistoryRev);
   const refreshAggregates  = useOrgStore((s) => s.refreshAggregates);
   const refreshStock       = useOrgStore((s) => s.refreshStock);
   const funds              = useOrgStore((s) => s.funds);
@@ -302,12 +302,11 @@ export default function ImportModal({ opened, onClose }) {
         });
       }
 
-      const [refreshed] = await Promise.all([
-        loadTransactions(org.id),
+      bumpHistoryRev();
+      await Promise.all([
         refreshAggregates(org.id),
         refreshStock(org.id),
       ]);
-      setTransactions(refreshed);
 
       notifications.show({
         message:   `${matched.length} card${matched.length !== 1 ? 's' : ''} imported successfully.`,

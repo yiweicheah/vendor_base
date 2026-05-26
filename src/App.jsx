@@ -4,7 +4,7 @@ import { Center, Loader } from '@mantine/core';
 import { supabase } from './lib/supabase';
 import useAuthStore from './store/authStore';
 import useOrgStore from './store/orgStore';
-import { resolveUser, loadAllMemberships, loadTransactions, loadEvents, loadFunds, loadPaymentMethods, loadEventMiscCosts, loadFixedCosts, loadSealedProducts, loadMetrics, loadEventBreakdown, loadMonthlyPL, loadStock } from './lib/db';
+import { resolveUser, loadAllMemberships, loadEvents, loadFunds, loadPaymentMethods, loadEventMiscCosts, loadFixedCosts, loadSealedProducts, loadMetrics, loadEventBreakdown, loadMonthlyPL, loadStock } from './lib/db';
 import { fetchExchangeRates } from './lib/exchangeRates';
 import { isSuperuserUid } from './lib/superuser';
 import AuthGuard from './components/AuthGuard';
@@ -55,7 +55,7 @@ export default function App() {
   const {
     org, memberships,
     setMembership, setMemberships, clearOrgData,
-    setTransactions, setEvents, setFunds, setPaymentMethods, setActiveEventId,
+    setEvents, setFunds, setPaymentMethods, setActiveEventId,
     setMiscCosts, setFixedCosts, setSealedProducts,
     setMetrics, setEventBreakdown, setMonthlyPL, setStock,
     setLoading,
@@ -115,7 +115,6 @@ export default function App() {
         if (initialMembership) {
           setLoading(true);
           Promise.all([
-            loadTransactions(initialMembership.org.id),
             loadEvents(initialMembership.org.id),
             loadFunds(initialMembership.org.id),
             loadPaymentMethods(initialMembership.org.id),
@@ -126,8 +125,7 @@ export default function App() {
             loadEventBreakdown(initialMembership.org.id),
             loadMonthlyPL(initialMembership.org.id),
             loadStock(initialMembership.org.id),
-          ]).then(([txs, events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock]) => {
-            setTransactions(txs);
+          ]).then(([events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock]) => {
             setEvents(events);
             setFunds(funds);
             setPaymentMethods(paymentMethods);
@@ -181,8 +179,7 @@ export default function App() {
     clearOrgData();
     setSwitchingOrg(true);
     try {
-      const [txs, events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock] = await Promise.all([
-        loadTransactions(orgId),
+      const [events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock] = await Promise.all([
         loadEvents(orgId),
         loadFunds(orgId),
         loadPaymentMethods(orgId),
@@ -194,7 +191,6 @@ export default function App() {
         loadMonthlyPL(orgId),
         loadStock(orgId),
       ]);
-      setTransactions(txs);
       setEvents(events);
       setFunds(funds);
       setPaymentMethods(paymentMethods);

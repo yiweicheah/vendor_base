@@ -188,15 +188,10 @@ export default function TransactionCard({ tx, view = 'list' }) {
   const events         = useOrgStore((s) => s.events);
   const paymentMethods = useOrgStore((s) => s.paymentMethods);
   const {
-    removeTransaction,
-    updateTransactionNotes:          patchNotes,
-    updateTransactionLine:           patchLine,
-    removeTransactionLine,
-    addTransactionLine,
-    updateTransactionEvent:          patchEvent,
-    updateTransactionPaymentMethod:  patchPaymentMethod,
-    updateFundEntry:                 updateFundEntryInStore,
-    removeFundEntry:                 removeFundEntryFromStore,
+    bumpHistory,
+    bumpHistoryRev,
+    updateFundEntry: updateFundEntryInStore,
+    removeFundEntry: removeFundEntryFromStore,
     refreshAggregates,
     refreshStock,
   } = useOrgStore();
@@ -264,7 +259,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
         setDeletingD(true);
         try {
           await deleteTransaction({ txId: tx.id, deletedById: user.dbId });
-          removeTransaction(tx.id);
+          bumpHistoryRev();
           if (linkedFund) {
             await deleteFundEntry(linkedFund.id);
             removeFundEntryFromStore(linkedFund.id);
@@ -292,7 +287,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
         setDeletingLine(lineId);
         try {
           await deleteTransactionLine(lineId);
-          removeTransactionLine(tx.id, lineId);
+          bumpHistory();
           if (isImport) {
             const deletedLine = lines.find((l) => l.id === lineId);
             if (deletedLine?.side === 'in' && deletedLine?.type === 'card') {
@@ -326,11 +321,9 @@ export default function TransactionCard({ tx, view = 'list' }) {
       }
 
       const currentPaymentMethod = tx.paymentMethod ?? null;
-      if (editPaymentMethod !== currentPaymentMethod) {
-        ops.push(
-          updateTransactionPaymentMethod({ txId: tx.id, paymentMethod: editPaymentMethod })
-            .then(() => patchPaymentMethod(tx.id, editPaymentMethod))
-        );
+      const paymentChanged = editPaymentMethod !== currentPaymentMethod;
+      if (paymentChanged) {
+        ops.push(updateTransactionPaymentMethod({ txId: tx.id, paymentMethod: editPaymentMethod }));
       }
 
       const editedLineIds = new Set([...Object.keys(lineEdits), ...Object.keys(qtyEdits)]);
@@ -345,10 +338,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
           if (q >= 1) patch.qty = q;
         }
         if (Object.keys(patch).length > 0) {
-          ops.push(
-            updateTransactionLine({ lineId, ...patch })
-              .then(() => patchLine(tx.id, lineId, patch))
-          );
+          ops.push(updateTransactionLine({ lineId, ...patch }));
         }
       }
 
@@ -363,13 +353,9 @@ export default function TransactionCard({ tx, view = 'list' }) {
           }, 0);
         await syncFundEntry(newTotal);
       }
-      patchNotes(tx.id, notes || null);
-      if (editEventId !== currentEventId) {
-        const newEvent = editEventId
-          ? (events.find((e) => e.id === editEventId) ?? null)
-          : null;
-        patchEvent(tx.id, newEvent ? { id: newEvent.id, name: newEvent.name } : null);
-      }
+      // Payment-method change could remove the last tx using that method, so bump
+      // both history and filter-options. Other edits only need History to refetch.
+      if (paymentChanged) bumpHistoryRev(); else bumpHistory();
       setLineEdits({});
       setQtyEdits({});
       setEditing(false);
@@ -397,7 +383,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
     setAddCardOpen(false);
     const { USD_TO_MYR, EUR_TO_MYR } = getRates();
     try {
-      const newId = await saveTransactionLine({
+      await saveTransactionLine({
         transactionId:        tx.id,
         side:                 addCardSide,
         type:                 'card',
@@ -417,21 +403,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
         sealedName:           null,
         sealedReferencePrice: null,
       });
-      addTransactionLine(tx.id, {
-        id:             newId,
-        side:           addCardSide,
-        type:           'card',
-        qty:            1,
-        unitPriceMyr:   cardData.marketPriceMyr ?? 0,
-        cardExternalId: cardData.cardExternalId,
-        cardName:       cardData.cardName,
-        cardNumber:     cardData.cardNumber,
-        cardSetName:    cardData.cardSetName,
-        cardLang:       null,
-        cardImageUrl:   cardData.cardImageUrl,
-        marketPriceMyr: cardData.marketPriceMyr,
-        priceSource:    cardData.priceSource,
-      });
+      bumpHistory();
       if (isImport && addCardSide === 'in') {
         const currentCost = lines
           .filter((l) => l.side === 'in' && l.type === 'card')

@@ -8,7 +8,6 @@ const useOrgStore = create((set) => ({
   org:             null,
   role:            null,
   memberships:     [],
-  transactions:    [],
   stock:           [],
   stockMap:        EMPTY_STOCK_MAP,
   events:          [],
@@ -21,12 +20,21 @@ const useOrgStore = create((set) => ({
   metrics:         null,
   eventBreakdown:  [],
   monthlyPL:       [],
-  loading:         false,
+  // History subscribes to these counters so its server-side page + filter-options
+  // refetch after any save/delete. `bumpHistory` is for inline edits (notes, event
+  // tag, line price/qty/add/remove) — these never change the set of distinct
+  // creators or payment methods, so History only refetches its page. `bumpHistoryRev`
+  // is for structural changes (new tx, tx delete, payment method change) — both
+  // history page AND the filter-options dropdown values can change.
+  historyRev:       0,
+  filterOptionsRev: 0,
+  loading:          false,
   error:           null,
 
   setMembership:    (org, role)       => set({ org, role }),
   setMemberships:   (memberships)     => set({ memberships }),
-  setTransactions:  (txs)        => set({ transactions: txs }),
+  bumpHistory:      ()           => set((s) => ({ historyRev: s.historyRev + 1 })),
+  bumpHistoryRev:   ()           => set((s) => ({ historyRev: s.historyRev + 1, filterOptionsRev: s.filterOptionsRev + 1 })),
   setStock:         (rows)       => set({ stock: rows, stockMap: buildStockMapFromRows(rows) }),
   refreshStock:     async (orgId) => {
     const rows = await loadStock(orgId);
@@ -69,68 +77,12 @@ const useOrgStore = create((set) => ({
   removeEvent:      (eventId)    => set((s) => ({ events: s.events.filter((e) => e.id !== eventId) })),
   setActiveEventId: (id)         => set({ activeEventId: id }),
 
-  removeTransaction: (txId) =>
-    set((s) => ({ transactions: s.transactions.filter((t) => t.id !== txId) })),
-
-  updateTransactionNotes: (txId, notes) =>
-    set((s) => ({
-      transactions: s.transactions.map((t) =>
-        t.id === txId ? { ...t, notes } : t
-      ),
-    })),
-
-  updateTransactionEvent: (txId, event) =>
-    set((s) => ({
-      transactions: s.transactions.map((t) =>
-        t.id === txId ? { ...t, event } : t
-      ),
-    })),
-
-  updateTransactionPaymentMethod: (txId, paymentMethod) =>
-    set((s) => ({
-      transactions: s.transactions.map((t) =>
-        t.id === txId ? { ...t, paymentMethod } : t
-      ),
-    })),
-
-  updateTransactionLine: (txId, lineId, patch) =>
-    set((s) => ({
-      transactions: s.transactions.map((t) =>
-        t.id !== txId ? t : {
-          ...t,
-          transactionLines: t.transactionLines.map((l) =>
-            l.id === lineId ? { ...l, ...patch } : l
-          ),
-        }
-      ),
-    })),
-
-  removeTransactionLine: (txId, lineId) =>
-    set((s) => ({
-      transactions: s.transactions.map((t) =>
-        t.id !== txId ? t : {
-          ...t,
-          transactionLines: t.transactionLines.filter((l) => l.id !== lineId),
-        }
-      ),
-    })),
-
-  addTransactionLine: (txId, line) =>
-    set((s) => ({
-      transactions: s.transactions.map((t) =>
-        t.id !== txId ? t : {
-          ...t,
-          transactionLines: [...t.transactionLines, line],
-        }
-      ),
-    })),
-
-  clearOrgData: () => set({ transactions: [], stock: [], stockMap: EMPTY_STOCK_MAP, events: [], funds: [], paymentMethods: [], miscCosts: [], fixedCosts: [], sealedProducts: [], activeEventId: null, metrics: null, eventBreakdown: [], monthlyPL: [] }),
+  clearOrgData: () => set({ stock: [], stockMap: EMPTY_STOCK_MAP, events: [], funds: [], paymentMethods: [], miscCosts: [], fixedCosts: [], sealedProducts: [], activeEventId: null, metrics: null, eventBreakdown: [], monthlyPL: [], historyRev: 0, filterOptionsRev: 0 }),
 
   clearOrg: () => set({
-    org: null, role: null, memberships: [], transactions: [], stock: [], stockMap: EMPTY_STOCK_MAP,
+    org: null, role: null, memberships: [], stock: [], stockMap: EMPTY_STOCK_MAP,
     events: [], funds: [], paymentMethods: [], miscCosts: [], fixedCosts: [], sealedProducts: [], activeEventId: null,
-    metrics: null, eventBreakdown: [], monthlyPL: [],
+    metrics: null, eventBreakdown: [], monthlyPL: [], historyRev: 0, filterOptionsRev: 0,
   }),
   setLoading: (loading) => set({ loading }),
   setError:   (error)   => set({ error }),

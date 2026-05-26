@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/cyw/.claude/plans/**)",
+      "Bash(awk '/src\\\\/pages\\\\/History.jsx/,/^$/')",
+      "Bash(npm run *)",
+      "Read(//tmp/**)",
+      "Bash(grep -E \"^/Users.*\\\\.jsx?$\" /tmp/lint_output.txt)",
+      "Read(//private/tmp/**)",
+      "Bash(git -C /Users/cyw/Developer/Web/vendor_base stash --keep-index)",
+      "Bash(git -C /Users/cyw/Developer/Web/vendor_base stash pop)",
+      "Bash(grep -oE \"\\(react-hooks/[a-z-]+|react/[a-z-]+|[a-z-]+/[a-z-]+\\)$\" /tmp/lint_output.txt)",
+      "Bash(git stash *)",
+      "Bash(grep -oE \"\\(react-hooks/[a-z-]+|react/[a-z-]+|[a-z-]+/[a-z-]+\\)$\" /tmp/lint_baseline.txt)",
+      "Bash(awk 'BEGIN{p=0} /^\\\\/.*History\\\\.jsx$/{p=1; print; next} p && /^\\\\/.*\\\\.jsx?$/{p=0} p && /react-hooks/{print}' /tmp/lint_after.txt)",
+      "Bash(awk 'BEGIN{p=0} /^\\\\/.*History\\\\.jsx$/{p=1; next} p && /^\\\\/.*\\\\.jsx?$/{p=0} p' /tmp/lint_after.txt)",
+      "Bash(git -C /Users/cyw/Developer/Web/vendor_base status --short)",
+      "Bash(git -C /Users/cyw/Developer/Web/vendor_base diff --stat HEAD)",
+      "Bash(xargs ls)",
+      "Bash(awk 'BEGIN{p=0} /^\\\\/.*Dashboard\\\\.jsx$/{p=1; print; next} p && /^\\\\/.*\\\\.jsx?$/{p=0} p && /react-hooks\\\\/set-state-in-effect/{print}' /tmp/lint_after_1b.txt)"
+    ]
+  }
+}
