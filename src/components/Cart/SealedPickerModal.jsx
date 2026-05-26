@@ -25,14 +25,14 @@ export default function SealedPickerModal({ opened, onClose, side }) {
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Add sealed product" size="sm">
+    <Modal opened={opened} onClose={onClose} title="Add sealed product" size="lg">
       <Stack gap="sm">
         {sealedProducts.length === 0 ? (
           <Text size="sm" c="dimmed" ta="center" py="md">
             No sealed products yet. Create them on the Stock page.
           </Text>
         ) : (
-          <ScrollArea.Autosize mah={320}>
+          <ScrollArea h={480}>
             <Stack gap="xs">
               {sealedProducts.map((p) => {
                 const found = sealedStockMap.get(p.name.toLowerCase());
@@ -61,7 +61,7 @@ export default function SealedPickerModal({ opened, onClose, side }) {
                 );
               })}
             </Stack>
-          </ScrollArea.Autosize>
+          </ScrollArea>
         )}
       </Stack>
     </Modal>
