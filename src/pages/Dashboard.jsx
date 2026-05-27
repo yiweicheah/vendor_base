@@ -1,22 +1,21 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box, ScrollArea, Stack, Paper, Group, Text, Divider, Loader,
   ThemeIcon, Center, Button, Modal, TextInput, ActionIcon,
-  Select, Pagination, Table, ScrollArea as SA,
+  Select, Table,
 } from '@mantine/core';
 import CurrencyInput from '../components/shared/CurrencyInput';
 import {
   IconChartBar, IconTrendingUp, IconTrendingDown, IconMinus, IconPlus, IconPencil,
-  IconChevronDown, IconChevronUp, IconChevronLeft, IconChevronRight,
-  IconSearch, IconArrowUp, IconArrowDown, IconHistory,
-  IconCheck, IconX, IconReceipt, IconDownload, IconTrash,
+  IconChevronLeft, IconChevronRight, IconHistory,
+  IconCheck, IconX, IconDownload, IconTrash,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
-// Dashboard reads pre-aggregated metrics/monthlyPL/eventBreakdown from the
-// store (populated via Supabase RPCs in App.jsx). The compute* helpers stay
-// in src/lib/analytics.js as truth-table refs for the parity test only.
+// Dashboard reads pre-aggregated metrics/monthlyPL from the store (populated
+// via Supabase RPCs in App.jsx). The compute* helpers stay in analytics.js
+// as truth-table refs for the parity test only.
 const DEFAULT_METRICS = {
   txCount: 0, cashIn: 0, cashOut: 0, totalIn: 0, totalOut: 0, netCashFlow: 0,
   cardBuyQty: 0, cardSellQty: 0, cardSoldTotal: 0, profitComplete: true,
@@ -30,7 +29,6 @@ const DEFAULT_MPL = {
 };
 import {
   createFundEntry, updateFundEntry,
-  createEventMiscCost, updateEventMiscCost, deleteEventMiscCost,
   createFixedCost, updateFixedCost, deleteFixedCost,
   loadTransactionsForMonth,
 } from '../lib/db';
@@ -257,201 +255,6 @@ function AddFundsModal({ opened, onClose, org, user, onAdded }) {
           </Button>
         </Stack>
       </form>
-    </Modal>
-  );
-}
-
-// ─── Event Misc Costs modal ───────────────────────────────────────────────────
-
-function EventMiscCostsModal({ event, opened, onClose, org, user }) {
-  const miscCosts     = useOrgStore((s) => s.miscCosts);
-  const addMiscCost   = useOrgStore((s) => s.addMiscCost);
-  const updateMiscCostInStore = useOrgStore((s) => s.updateMiscCost);
-  const removeMiscCost = useOrgStore((s) => s.removeMiscCost);
-  const refreshAggregates = useOrgStore((s) => s.refreshAggregates);
-
-  const items = useMemo(
-    () => miscCosts.filter((c) => c.eventId === event?.id),
-    [miscCosts, event?.id]
-  );
-  const total = items.reduce((s, c) => s + (c.amountMyr ?? 0), 0);
-
-  const [newLabel,  setNewLabel]  = useState('');
-  const [newAmount, setNewAmount] = useState('');
-  const [adding,    setAdding]    = useState(false);
-
-  const [editingId,    setEditingId]    = useState(null);
-  const [editLabel,    setEditLabel]    = useState('');
-  const [editAmount,   setEditAmount]   = useState('');
-  const [saving,       setSaving]       = useState(false);
-  const [deletingId,   setDeletingId]   = useState(null);
-
-  function resetNew() { setNewLabel(''); setNewAmount(''); }
-
-  async function handleAdd() {
-    const amt = typeof newAmount === 'number' ? newAmount : parseFloat(newAmount);
-    if (!newLabel.trim() || !amt || amt <= 0 || !org?.id || !event?.id) return;
-    setAdding(true);
-    try {
-      const row = await createEventMiscCost({
-        orgId:       org.id,
-        eventId:     event.id,
-        label:       newLabel.trim(),
-        amountMyr:   amt,
-        createdById: user?.dbId ?? null,
-      });
-      addMiscCost(row);
-      resetNew();
-      refreshAggregates(org.id);
-    } catch (err) {
-      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  function startEdit(item) {
-    setEditingId(item.id);
-    setEditLabel(item.label);
-    setEditAmount(item.amountMyr);
-  }
-
-  async function handleSave(id) {
-    const amt = typeof editAmount === 'number' ? editAmount : parseFloat(editAmount);
-    if (!editLabel.trim() || !amt || amt <= 0) return;
-    setSaving(true);
-    try {
-      await updateEventMiscCost({ id, label: editLabel.trim(), amountMyr: amt });
-      updateMiscCostInStore(id, { label: editLabel.trim(), amountMyr: amt });
-      setEditingId(null);
-      refreshAggregates(org.id);
-    } catch (err) {
-      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDelete(id) {
-    setDeletingId(id);
-    try {
-      await deleteEventMiscCost(id);
-      removeMiscCost(id);
-      refreshAggregates(org.id);
-    } catch (err) {
-      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  function handleClose() {
-    resetNew();
-    setEditingId(null);
-    onClose();
-  }
-
-  return (
-    <Modal opened={opened} onClose={handleClose} title={`Misc costs — ${event?.name ?? ''}`} size="sm">
-      <Stack gap="sm">
-        {/* Add new item */}
-        <Group gap="xs" align="flex-end">
-          <TextInput
-            label="Label"
-            placeholder="Booth rental"
-            value={newLabel}
-            onChange={(e) => setNewLabel(e.currentTarget.value)}
-            style={{ flex: 1 }}
-            size="xs"
-          />
-          <CurrencyInput
-            label="Amount"
-            placeholder="0.00"
-            leftSection={<Text size="xs" c="dimmed">RM</Text>}
-            value={newAmount}
-            onChange={setNewAmount}
-            size="xs"
-            style={{ width: 110 }}
-          />
-          <ActionIcon
-            color="violet"
-            size="sm"
-            loading={adding}
-            disabled={!newLabel.trim() || !(parseFloat(newAmount) > 0)}
-            onClick={handleAdd}
-            mb={1}
-          >
-            <IconPlus size={14} />
-          </ActionIcon>
-        </Group>
-
-        {items.length > 0 && <Divider />}
-
-        {/* Existing items */}
-        {items.map((item) => (
-          <Paper key={item.id} withBorder p="xs" radius="md">
-            {editingId === item.id ? (
-              <Group gap="xs" align="flex-end">
-                <TextInput
-                  value={editLabel}
-                  onChange={(e) => setEditLabel(e.currentTarget.value)}
-                  size="xs"
-                  style={{ flex: 1 }}
-                  autoFocus
-                />
-                <CurrencyInput
-                  value={editAmount}
-                  onChange={setEditAmount}
-                  size="xs"
-                  style={{ width: 100 }}
-                  leftSection={<Text size="xs" c="dimmed">RM</Text>}
-                />
-                <ActionIcon size="sm" color="green" loading={saving} onClick={() => handleSave(item.id)}>
-                  <IconCheck size={13} />
-                </ActionIcon>
-                <ActionIcon size="sm" variant="subtle" color="gray" onClick={() => setEditingId(null)} disabled={saving}>
-                  <IconX size={13} />
-                </ActionIcon>
-              </Group>
-            ) : (
-              <Group justify="space-between" wrap="nowrap">
-                <Text size="sm" truncate style={{ flex: 1 }}>{item.label}</Text>
-                <Group gap={4} wrap="nowrap">
-                  <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap' }}>
-                    {rm(item.amountMyr ?? 0)}
-                  </Text>
-                  <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => startEdit(item)}>
-                    <IconPencil size={11} />
-                  </ActionIcon>
-                  <ActionIcon
-                    size="xs"
-                    variant="subtle"
-                    color="red"
-                    loading={deletingId === item.id}
-                    onClick={() => handleDelete(item.id)}
-                  >
-                    <IconTrash size={11} />
-                  </ActionIcon>
-                </Group>
-              </Group>
-            )}
-          </Paper>
-        ))}
-
-        {items.length > 0 && (
-          <>
-            <Divider />
-            <Group justify="space-between">
-              <Text size="sm" fw={600}>Total</Text>
-              <Text size="sm" fw={700}>{rm(total)}</Text>
-            </Group>
-          </>
-        )}
-
-        {items.length === 0 && (
-          <Text size="xs" c="dimmed" ta="center" py="xs">No misc costs yet. Add one above.</Text>
-        )}
-      </Stack>
     </Modal>
   );
 }
@@ -907,191 +710,6 @@ function ExportPLModal({ opened, onClose, miscCosts, fixedCosts, events, monthly
   );
 }
 
-// ─── By Event section ────────────────────────────────────────────────────────
-
-const EVENT_SORT_OPTIONS = [
-  { value: 'txCount',     label: 'Most transactions' },
-  { value: 'grossProfit', label: 'Profit' },
-  { value: 'netCashFlow', label: 'Net cash flow' },
-  { value: 'totalOut',    label: 'Sales' },
-  { value: 'date',        label: 'Date' },
-  { value: 'name',        label: 'Name' },
-];
-const PAGE_SIZE = 5;
-
-function ByEventSection({ breakdown, events, canEdit, onManageCosts, org, user }) {
-  const [collapsed, setCollapsedRaw] = useState(
-    () => localStorage.getItem('dashboard_events_collapsed') === 'true'
-  );
-  const [sort, setSortRaw] = useState(
-    () => localStorage.getItem('dashboard_events_sort') ?? 'txCount'
-  );
-  const [sortDir, setSortDirRaw] = useState(
-    () => localStorage.getItem('dashboard_events_sort_dir') ?? 'desc'
-  );
-  const [search, setSearch] = useState('');
-  const [page,   setPage]   = useState(1);
-  const topRef = useRef(null);
-
-  const [miscCostsEvent, setMiscCostsEvent] = useState(null);
-
-  function setCollapsed(v) { setCollapsedRaw(v); localStorage.setItem('dashboard_events_collapsed', String(v)); }
-  function setSort(v)      { setSortRaw(v);      localStorage.setItem('dashboard_events_sort', v);     setPage(1); }
-  function setSortDir(v)   { setSortDirRaw(v);   localStorage.setItem('dashboard_events_sort_dir', v); setPage(1); }
-  function handleSearch(v) { setSearch(v); setPage(1); }
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return breakdown;
-    return breakdown.filter((ev) => (ev.name ?? '').toLowerCase().includes(q));
-  }, [breakdown, search]);
-
-  const sorted = useMemo(() => {
-    const copy = [...filtered];
-    const dir  = sortDir === 'asc' ? 1 : -1;
-
-    if (sort === 'name') {
-      copy.sort((a, b) => dir * (a.name ?? '').localeCompare(b.name ?? ''));
-    } else if (sort === 'date') {
-      copy.sort((a, b) => {
-        if (a.id === '__none__') return 1;
-        if (b.id === '__none__') return -1;
-        const aTs = events.find((e) => e.id === a.id)?.startsAt ?? '';
-        const bTs = events.find((e) => e.id === b.id)?.startsAt ?? '';
-        return dir * (aTs < bTs ? -1 : aTs > bTs ? 1 : 0);
-      });
-    } else {
-      copy.sort((a, b) => dir * (a[sort] - b[sort]));
-    }
-    return copy;
-  }, [filtered, sort, sortDir, events]);
-
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const safePage   = Math.min(page, totalPages);
-  const paginated  = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  return (
-    <Stack gap="sm" ref={topRef}>
-      <Group justify="space-between" align="center">
-        <Group
-          gap={4}
-          style={{ cursor: 'pointer', userSelect: 'none' }}
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          <SectionLabel>By Event</SectionLabel>
-          <ActionIcon variant="transparent" color="gray" size="xs" tabIndex={-1}>
-            {collapsed ? <IconChevronDown size={12} /> : <IconChevronUp size={12} />}
-          </ActionIcon>
-        </Group>
-        {!collapsed && (
-          <Group gap={4}>
-            <Select
-              data={EVENT_SORT_OPTIONS}
-              value={sort}
-              onChange={setSort}
-              size="xs"
-              w={140}
-              allowDeselect={false}
-            />
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="sm"
-              onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
-            >
-              {sortDir === 'desc' ? <IconArrowDown size={14} /> : <IconArrowUp size={14} />}
-            </ActionIcon>
-          </Group>
-        )}
-      </Group>
-
-      {!collapsed && (
-        <Stack gap="xs">
-          <TextInput
-            placeholder="Search events…"
-            leftSection={<IconSearch size={13} />}
-            value={search}
-            onChange={(e) => handleSearch(e.currentTarget.value)}
-            size="xs"
-          />
-
-          {paginated.length === 0 ? (
-            <Text size="xs" c="dimmed" ta="center" py="sm">No events match.</Text>
-          ) : (
-            paginated.map((ev) => (
-              <Paper key={ev.id} withBorder p="sm" radius="md">
-                <Stack gap="xs">
-                  <Group justify="space-between" wrap="nowrap">
-                    <Text size="sm" fw={500} truncate>{ev.name}</Text>
-                    <Group gap={4} style={{ flexShrink: 0 }}>
-                      <Text size="xs" c="dimmed">{ev.txCount} tx</Text>
-                      {canEdit && ev.id !== '__none__' && (
-                        <ActionIcon
-                          variant="subtle"
-                          color="gray"
-                          size="xs"
-                          title="Misc costs"
-                          onClick={() => setMiscCostsEvent(events.find((e) => e.id === ev.id) ?? null)}
-                        >
-                          <IconReceipt size={11} />
-                        </ActionIcon>
-                      )}
-                    </Group>
-                  </Group>
-                  <Group justify="space-between">
-                    <Text size="xs" c="dimmed">Sales</Text>
-                    <Text size="xs">{rm(ev.totalOut)}</Text>
-                  </Group>
-                  <Group justify="space-between">
-                    <Text size="xs" c="dimmed">Purchases</Text>
-                    <Text size="xs" c="dimmed">−{rm(ev.totalIn)}</Text>
-                  </Group>
-                  {ev.cardSoldTotal > 0 && (
-                    <Group justify="space-between">
-                      <Text size="xs" c="dimmed">Gross profit{!ev.profitComplete ? ' ~' : ''}</Text>
-                      <Text size="xs" fw={500} c={netColor(ev.grossProfit)}>
-                        {sign(ev.grossProfit)}{rm(ev.grossProfit)}
-                      </Text>
-                    </Group>
-                  )}
-                  {ev.miscCostTotal > 0 && (
-                    <Group justify="space-between">
-                      <Text size="xs" c="dimmed">Misc costs</Text>
-                      <Text size="xs" c="dimmed">−{rm(ev.miscCostTotal)}</Text>
-                    </Group>
-                  )}
-                  <Divider variant="dashed" />
-                  <Group justify="space-between">
-                    <Text size="xs" fw={600}>Total Fund In/Out</Text>
-                    <Text size="xs" fw={600} c={netColor(ev.miscCostTotal > 0 ? ev.netPL : ev.netCashFlow)}>
-                      {sign(ev.miscCostTotal > 0 ? ev.netPL : ev.netCashFlow)}
-                      {rm(ev.miscCostTotal > 0 ? ev.netPL : ev.netCashFlow)}
-                    </Text>
-                  </Group>
-                </Stack>
-              </Paper>
-            ))
-          )}
-
-          {totalPages > 1 && (
-            <Group justify="center" mt="xs">
-              <Pagination total={totalPages} value={safePage} onChange={(p) => { setPage(p); topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} size="xs" />
-            </Group>
-          )}
-        </Stack>
-      )}
-
-      {/* Event misc costs modal */}
-      <EventMiscCostsModal
-        event={miscCostsEvent}
-        opened={!!miscCostsEvent}
-        onClose={() => setMiscCostsEvent(null)}
-        org={org}
-        user={user}
-      />
-    </Stack>
-  );
-}
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
@@ -1103,8 +721,7 @@ export default function Dashboard() {
   const miscCosts       = useOrgStore((s) => s.miscCosts);
   const fixedCosts      = useOrgStore((s) => s.fixedCosts);
   const metrics         = useOrgStore((s) => s.metrics);
-  const eventBreakdown  = useOrgStore((s) => s.eventBreakdown);
-  const monthlyPL       = useOrgStore((s) => s.monthlyPL);
+const monthlyPL       = useOrgStore((s) => s.monthlyPL);
   const addFundEntry    = useOrgStore((s) => s.addFundEntry);
   const user            = useAuthStore((s) => s.user);
 
@@ -1374,17 +991,6 @@ export default function Dashboard() {
                   </Stack>
                 </Paper>
               </Stack>
-            )}
-
-            {/* ── Per-event breakdown ───────────────────────────────────────── */}
-            {eventBreakdown.length > 0 && (
-              <ByEventSection
-                breakdown={eventBreakdown}
-                events={events}
-                canEdit={canAddFunds}
-                org={org}
-                user={user}
-              />
             )}
 
           </Stack>

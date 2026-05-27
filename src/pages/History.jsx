@@ -2,17 +2,24 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Box, ScrollArea, Stack, Text, Center, ThemeIcon, Loader, LoadingOverlay,
   Group, ActionIcon, Select, Modal, TextInput, Button, Pagination,
+  Paper, Divider,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconHistory, IconLayoutList, IconLayoutGrid, IconPencil, IconTrash } from '@tabler/icons-react';
+import { IconHistory, IconLayoutList, IconLayoutGrid, IconPencil, IconTrash, IconReceipt } from '@tabler/icons-react';
 import useOrgStore from '../store/orgStore';
+import useAuthStore from '../store/authStore';
 import TransactionCard from '../components/History/TransactionCard';
+import EventMiscCostsModal from '../components/shared/EventMiscCostsModal';
 import {
   updateEvent as updateEventDb,
   deleteEvent as deleteEventDb,
   loadTransactionsPage,
   loadHistoryFilterOptions,
 } from '../lib/db';
+import { rm } from '../lib/format';
+
+function sign(n) { return n > 0.005 ? '+' : n < -0.005 ? '−' : ''; }
+function netColor(n) { return n > 0.005 ? 'green.4' : n < -0.005 ? 'red.4' : 'dimmed'; }
 
 function formatEventDates(startsAt, endsAt) {
   if (!startsAt) return null;
@@ -114,13 +121,15 @@ const TYPE_FILTER_OPTIONS = [
 
 
 export default function History() {
-  const org           = useOrgStore((s) => s.org);
-  const events        = useOrgStore((s) => s.events);
-  const role          = useOrgStore((s) => s.role);
+  const org                = useOrgStore((s) => s.org);
+  const events             = useOrgStore((s) => s.events);
+  const role               = useOrgStore((s) => s.role);
+  const eventBreakdown     = useOrgStore((s) => s.eventBreakdown);
   const historyRev         = useOrgStore((s) => s.historyRev);
   const filterOptionsRev   = useOrgStore((s) => s.filterOptionsRev);
   const updateEventInStore = useOrgStore((s) => s.updateEvent);
   const removeEventInStore = useOrgStore((s) => s.removeEvent);
+  const user               = useAuthStore((s) => s.user);
   const [view, setViewRaw]              = useState(() => localStorage.getItem('history_view')            ?? 'list');
   const [sort, setSortRaw]              = useState(() => {
     const stored = localStorage.getItem('history_sort');
@@ -136,6 +145,7 @@ export default function History() {
   const viewportRef = useRef(null);
   const [deletingEvent, setDeletingEvent] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [miscCostsEvent, setMiscCostsEvent] = useState(null);
 
   const [pageData, setPageData] = useState({ rows: [], totalCount: 0 });
   const [pageLoading, setPageLoading] = useState(false);
@@ -255,6 +265,11 @@ export default function History() {
     [eventFilter, events],
   );
 
+  const selectedEventBreakdown = useMemo(
+    () => eventFilter !== 'all' ? (eventBreakdown.find((e) => e.id === eventFilter) ?? null) : null,
+    [eventFilter, eventBreakdown],
+  );
+
   const handleRowsScrollTop = useCallback(() => {
     viewportRef.current?.scrollTo({ top: 0 });
   }, []);
@@ -289,6 +304,13 @@ export default function History() {
           onSaved={(patch) => updateEventInStore(editingEvent.id, patch)}
         />
       )}
+      <EventMiscCostsModal
+        event={miscCostsEvent}
+        opened={!!miscCostsEvent}
+        onClose={() => setMiscCostsEvent(null)}
+        org={org}
+        user={user}
+      />
       <Modal
         opened={!!deletingEvent}
         onClose={() => setDeletingEvent(null)}
@@ -390,6 +412,58 @@ export default function History() {
               </ActionIcon>
             </Group>
           </Group>
+
+          {selectedEventBreakdown && (
+            <Paper withBorder p="sm" radius="md">
+              <Stack gap="xs">
+                <Group justify="space-between" wrap="nowrap">
+                  <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
+                    Event Summary
+                  </Text>
+                  {canEdit && selectedEventBreakdown.id !== '__none__' && (
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      size="xs"
+                      title="Misc costs"
+                      onClick={() => setMiscCostsEvent(events.find((e) => e.id === selectedEventBreakdown.id) ?? null)}
+                    >
+                      <IconReceipt size={11} />
+                    </ActionIcon>
+                  )}
+                </Group>
+                <Group justify="space-between">
+                  <Text size="xs" c="dimmed">Sales</Text>
+                  <Text size="xs">{rm(selectedEventBreakdown.totalOut)}</Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="xs" c="dimmed">Purchases</Text>
+                  <Text size="xs" c="dimmed">−{rm(selectedEventBreakdown.totalIn)}</Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="xs" c="dimmed">
+                    Gross profit{!selectedEventBreakdown.profitComplete ? ' ~' : ''}
+                  </Text>
+                  <Text size="xs" fw={500} c={netColor(selectedEventBreakdown.grossProfit)}>
+                    {sign(selectedEventBreakdown.grossProfit)}{rm(selectedEventBreakdown.grossProfit)}
+                  </Text>
+                </Group>
+                {selectedEventBreakdown.miscCostTotal > 0 && (
+                  <Group justify="space-between">
+                    <Text size="xs" c="dimmed">Misc costs</Text>
+                    <Text size="xs" c="dimmed">−{rm(selectedEventBreakdown.miscCostTotal)}</Text>
+                  </Group>
+                )}
+                <Divider variant="dashed" />
+                <Group justify="space-between">
+                  <Text size="xs" fw={600}>Net P&L</Text>
+                  <Text size="xs" fw={600} c={netColor(selectedEventBreakdown.netPL)}>
+                    {sign(selectedEventBreakdown.netPL)}{rm(selectedEventBreakdown.netPL)}
+                  </Text>
+                </Group>
+              </Stack>
+            </Paper>
+          )}
 
           <Group gap="xs">
             <Select

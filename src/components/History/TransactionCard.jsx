@@ -227,9 +227,24 @@ export default function TransactionCard({ tx, view = 'list' }) {
 
   const canEdit = role === 'owner' || role === 'admin';
 
-  const lines     = tx.transactionLines ?? [];
-  const inLines   = lines.filter((l) => l.side === 'in');
-  const outLines  = lines.filter((l) => l.side === 'out');
+  const lines = tx.transactionLines ?? [];
+  function sortLines(arr) {
+    const typeOrder = (l) => {
+      if (l.type === 'card'   && l.cardExternalId != null) return 0;
+      if (l.type === 'sealed')                             return 1;
+      if (l.type === 'card'   && l.cardExternalId == null) return 2;
+      return 3; // cash
+    };
+    return [...arr].sort((a, b) => {
+      const ord = typeOrder(a) - typeOrder(b);
+      if (ord !== 0) return ord;
+      const nameA = (a.cardName ?? a.sealedName ?? '').toLowerCase();
+      const nameB = (b.cardName ?? b.sealedName ?? '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }
+  const inLines  = sortLines(lines.filter((l) => l.side === 'in'));
+  const outLines = sortLines(lines.filter((l) => l.side === 'out'));
   const type      = isImport ? 'BUY' : classifyTransaction(lines);
   const inTotal   = lineTotal(inLines);
   const outTotal  = lineTotal(outLines);
@@ -471,7 +486,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
     return (
       <>
         {(inLines.length > 0 || editing) && (
-          <Stack gap="xs" mb={outLines.length > 0 || editing ? 'sm' : 0}>
+          <Stack gap="xs">
             <Group gap="xs">
               <Text size="xs" fw={700} tt="uppercase" c="violet.4" style={{ letterSpacing: '0.08em' }}>In</Text>
               <Text size="xs" c="dimmed">{rm(lineTotal(inLines))}</Text>
@@ -517,6 +532,10 @@ export default function TransactionCard({ tx, view = 'list' }) {
               </Group>
             )}
           </Stack>
+        )}
+
+        {(inLines.length > 0 || editing) && (outLines.length > 0 || editing) && (
+          <Divider my="xs" />
         )}
 
         {(outLines.length > 0 || editing) && (

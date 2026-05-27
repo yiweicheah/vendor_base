@@ -94,9 +94,11 @@ function CartSection({ side, lines, onAddCard, onAddCash, onAddBulk, onAddSealed
           </Box>
         ) : (
           <Stack gap="sm">
-            {lines.map((line) => (
-              <CartLine key={line.id} line={line} side={side} />
-            ))}
+            {[...lines]
+              .sort((a, b) => a.type === 'cash' && b.type !== 'cash' ? 1 : a.type !== 'cash' && b.type === 'cash' ? -1 : 0)
+              .map((line) => (
+                <CartLine key={line.id} line={line} side={side} />
+              ))}
           </Stack>
         )}
 
