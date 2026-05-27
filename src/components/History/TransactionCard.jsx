@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Paper, Group, Stack, Text, Badge, ActionIcon,
-  Divider, Box, Image, Collapse, Textarea, Button, TextInput, NumberInput, SimpleGrid, Select,
+  Divider, Box, Image, Collapse, Textarea, Button, TextInput, NumberInput, SimpleGrid, Select, Loader,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -12,9 +12,9 @@ import {
 } from '@tabler/icons-react';
 import {
   deleteTransaction, updateTransactionNotes,
-  updateTransactionLine, deleteTransactionLine, saveTransactionLine,
+  updateTransactionLinesBulk, deleteTransactionLine, saveTransactionLine,
   updateFundEntry, deleteFundEntry, updateTransactionEvent,
-  updateTransactionPaymentMethod,
+  updateTransactionPaymentMethod, loadTransactionLines,
 } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import { rm } from '../../lib/format';
@@ -35,18 +35,6 @@ function formatDate(ts) {
   );
 }
 
-function classifyTransaction(lines) {
-  const inLines  = lines.filter((l) => l.side === 'in');
-  const outLines = lines.filter((l) => l.side === 'out');
-  const cardsIn  = inLines.some((l)  => l.type === 'card' || l.type === 'sealed');
-  const cashIn   = inLines.some((l)  => l.type === 'cash');
-  const cardsOut = outLines.some((l) => l.type === 'card' || l.type === 'sealed');
-  const cashOut  = outLines.some((l) => l.type === 'cash');
-  if (cardsIn && cashOut && !cashIn && !cardsOut) return 'BUY';
-  if (cashIn  && cardsOut && !cardsIn && !cashOut) return 'SELL';
-  return 'TRADE';
-}
-
 const TYPE_COLOR = { BUY: 'blue', SELL: 'green', TRADE: 'violet' };
 
 function lineTotal(lines) {
@@ -55,31 +43,6 @@ function lineTotal(lines) {
 
 function sign(n)     { return n > 0.005 ? '+' : n < -0.005 ? '−' : ''; }
 function netColor(n) { return n > 0.005 ? 'green.4' : n < -0.005 ? 'red.4' : 'dimmed'; }
-
-function txMetrics(lines) {
-  const sales     = lines.filter((l) => l.side === 'in'  && l.type === 'cash')
-                         .reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
-  const purchases = lines.filter((l) => l.side === 'out' && l.type === 'cash')
-                         .reduce((s, l) => s + (l.unitPriceMyr || 0) * l.qty, 0);
-  const cardOut          = lines.filter((l) => l.side === 'out' && l.type === 'card');
-  const cardSoldTotal    = cardOut.reduce((s, l) => s + l.qty, 0);
-  const cardSoldWithCost = cardOut.reduce((s, l) => {
-    const effectiveCost = l.cardExternalId == null ? (l.avgCostMyr ?? 0) : l.avgCostMyr;
-    return effectiveCost != null ? s + l.qty : s;
-  }, 0);
-  const grossProfit = cardOut.reduce((s, l) => {
-    const effectiveCost = l.cardExternalId == null ? (l.avgCostMyr ?? 0) : l.avgCostMyr;
-    return effectiveCost != null ? s + ((l.unitPriceMyr || 0) - effectiveCost) * l.qty : s;
-  }, 0);
-  return {
-    sales,
-    purchases,
-    grossProfit:    +grossProfit.toFixed(2),
-    cardSoldTotal,
-    profitComplete: cardSoldTotal === 0 || cardSoldWithCost === cardSoldTotal,
-    net:            sales - purchases,
-  };
-}
 
 // ─── Line row ─────────────────────────────────────────────────────────────────
 
@@ -224,10 +187,43 @@ export default function TransactionCard({ tx, view = 'list' }) {
   const [addSealedOpen, setAddSealedOpen] = useState(false);
   const [addSealedSide, setAddSealedSide] = useState('in');
   const [detailCard,    setDetailCard]    = useState(null); // { id, imageUrl }
+  // Lines are lazy-loaded on expand — slim page RPC ships only header aggregates.
+  const [loadedLines,  setLoadedLines]  = useState(null);
+  const [linesLoading, setLinesLoading] = useState(false);
 
   const canEdit = role === 'owner' || role === 'admin';
 
-  const lines = tx.transactionLines ?? [];
+  useEffect(() => {
+    // Don't put loadedLines/linesLoading in deps — they're written from inside
+    // this effect, which would otherwise create a cleanup race: setLinesLoading(true)
+    // re-runs the effect, the cleanup cancels the in-flight promise, and
+    // setLinesLoading(false) never fires (loader stuck forever).
+    if (!expanded || !org?.id) return;
+    if (loadedLines !== null || linesLoading) return;
+    let cancelled = false;
+    setLinesLoading(true);
+    loadTransactionLines(org.id, tx.id)
+      .then((rows) => { if (!cancelled) setLoadedLines(rows); })
+      .catch((err) => {
+        if (cancelled) return;
+        notifications.show({ title: 'Failed to load lines', message: err.message, color: 'red' });
+      })
+      .finally(() => { if (!cancelled) setLinesLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, org?.id, tx.id]);
+
+  async function refreshLines() {
+    if (loadedLines === null || !org?.id) return;
+    try {
+      const next = await loadTransactionLines(org.id, tx.id);
+      setLoadedLines(next);
+    } catch (err) {
+      notifications.show({ title: 'Failed to refresh lines', message: err.message, color: 'red' });
+    }
+  }
+
+  const lines = loadedLines ?? [];
   function sortLines(arr) {
     const typeOrder = (l) => {
       if (l.type === 'card'   && l.cardExternalId != null) return 0;
@@ -243,27 +239,34 @@ export default function TransactionCard({ tx, view = 'list' }) {
       return nameA.localeCompare(nameB);
     });
   }
+  // Expanded-view in/out splits — only meaningful once lines have been lazy-loaded.
   const inLines  = sortLines(lines.filter((l) => l.side === 'in'));
   const outLines = sortLines(lines.filter((l) => l.side === 'out'));
-  const type      = isImport ? 'BUY' : classifyTransaction(lines);
-  const inTotal   = lineTotal(inLines);
-  const outTotal  = lineTotal(outLines);
 
-  const cardCountIn  = inLines.filter((l)  => l.type === 'card').reduce((s, l) => s + l.qty, 0);
-  const cardCountOut = outLines.filter((l) => l.type === 'card').reduce((s, l) => s + l.qty, 0);
-
-  const cardInTotal  = lineTotal(inLines.filter((l)  => l.type === 'card' || l.type === 'sealed'));
-  const cardOutTotal = lineTotal(outLines.filter((l) => l.type === 'card' || l.type === 'sealed'));
+  // Collapsed-row aggregates come from the slim RPC's precomputed scalars
+  // (see get_org_transactions_page_slim.sql). No derivation from `lines` —
+  // these render before the user expands the row, when `lines` is still empty.
+  const type         = tx.txType ?? 'TRADE';
+  const cardInTotal  = tx.cardInTotal  ?? 0;
+  const cardOutTotal = tx.cardOutTotal ?? 0;
+  const cardCountIn  = tx.cardInQty    ?? 0;
+  const cardCountOut = tx.cardOutQty   ?? 0;
 
   const summaryParts = [];
   if (cardCountIn  > 0) summaryParts.push(`${cardCountIn} card${cardCountIn !== 1 ? 's' : ''} in`);
   if (cardCountOut > 0) summaryParts.push(`${cardCountOut} card${cardCountOut !== 1 ? 's' : ''} out`);
-  if (inLines.some((l)  => l.type === 'cash')) summaryParts.push('cash in');
-  if (outLines.some((l) => l.type === 'cash')) summaryParts.push('cash out');
+  if (tx.hasCashIn)  summaryParts.push('cash in');
+  if (tx.hasCashOut) summaryParts.push('cash out');
 
+  const inTotal      = Number(tx.inTotal  ?? 0);
+  const outTotal     = Number(tx.outTotal ?? 0);
   const displayTotal = inTotal > 0 ? inTotal : outTotal;
   const creator      = tx.createdBy?.displayName;
-  const m            = txMetrics(lines);
+  const m = {
+    cardSoldTotal:  tx.cardSoldTotal  ?? 0,
+    grossProfit:    Number(tx.grossProfit ?? 0),
+    profitComplete: tx.profitComplete ?? true,
+  };
 
   // ─── Delete transaction ────────────────────────────────────────────────────
 
@@ -306,7 +309,6 @@ export default function TransactionCard({ tx, view = 'list' }) {
         setDeletingLine(lineId);
         try {
           await deleteTransactionLine(lineId);
-          bumpHistory();
           if (isImport) {
             const deletedLine = lines.find((l) => l.id === lineId);
             if (deletedLine?.side === 'in' && deletedLine?.type === 'card') {
@@ -316,6 +318,8 @@ export default function TransactionCard({ tx, view = 'list' }) {
               await syncFundEntry(newTotal);
             }
           }
+          await refreshLines();
+          bumpHistory();
           if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
           notifications.show({ message: 'Line removed.', color: 'orange', autoClose: 2000 });
         } catch (err) {
@@ -346,8 +350,9 @@ export default function TransactionCard({ tx, view = 'list' }) {
       }
 
       const editedLineIds = new Set([...Object.keys(lineEdits), ...Object.keys(qtyEdits)]);
+      const linePatches = [];
       for (const lineId of editedLineIds) {
-        const patch = {};
+        const patch = { lineId };
         if (lineId in lineEdits) {
           const parsed = parseFloat(lineEdits[lineId]);
           if (!isNaN(parsed)) patch.unitPriceMyr = parsed;
@@ -356,13 +361,14 @@ export default function TransactionCard({ tx, view = 'list' }) {
           const q = qtyEdits[lineId];
           if (q >= 1) patch.qty = q;
         }
-        if (Object.keys(patch).length > 0) {
-          ops.push(updateTransactionLine({ lineId, ...patch }));
-        }
+        if (Object.keys(patch).length > 1) linePatches.push(patch);
       }
 
       await Promise.all(ops);
-      if (isImport) {
+      if (linePatches.length > 0 && org?.id) {
+        await updateTransactionLinesBulk(org.id, linePatches);
+      }
+      if (isImport && loadedLines !== null) {
         const newTotal = lines
           .filter((l) => l.side === 'in' && l.type === 'card')
           .reduce((sum, l) => {
@@ -372,6 +378,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
           }, 0);
         await syncFundEntry(newTotal);
       }
+      if (linePatches.length > 0) await refreshLines();
       // Payment-method change could remove the last tx using that method, so bump
       // both history and filter-options. Other edits only need History to refetch.
       if (paymentChanged) bumpHistoryRev(); else bumpHistory();
@@ -411,6 +418,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
         sealedReferencePrice: product.referenceCostMyr ?? null,
         sealedCatalogId:      product.id,
       });
+      await refreshLines();
       bumpHistory();
       if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
       notifications.show({ message: 'Sealed product added.', color: 'teal', autoClose: 2000 });
@@ -431,6 +439,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
         unitPriceMyr:  0,
         cardName:      'Bulk cards',
       });
+      await refreshLines();
       bumpHistory();
       if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
       notifications.show({ message: 'Bulk line added.', color: 'teal', autoClose: 2000 });
@@ -465,13 +474,14 @@ export default function TransactionCard({ tx, view = 'list' }) {
         sealedName:           null,
         sealedReferencePrice: null,
       });
-      bumpHistory();
       if (isImport && addCardSide === 'in') {
         const currentCost = lines
           .filter((l) => l.side === 'in' && l.type === 'card')
           .reduce((sum, l) => sum + (l.unitPriceMyr || 0) * l.qty, 0);
         await syncFundEntry(currentCost + (cardData.marketPriceMyr ?? 0));
       }
+      await refreshLines();
+      bumpHistory();
       if (org?.id) refreshAggregates(org.id);
       notifications.show({ message: 'Card added.', color: 'teal', autoClose: 2000 });
     } catch (err) {
@@ -733,7 +743,9 @@ export default function TransactionCard({ tx, view = 'list' }) {
       {isGrid && (
         <Collapse expanded={expanded}>
           <Divider my="sm" />
-          {(() => {
+          {linesLoading && loadedLines === null ? (
+            <Group justify="center" py="sm"><Loader size="xs" /></Group>
+          ) : (() => {
             const sections = [
               { label: 'In',  side: 'in',  color: 'violet.4', cardLines: inLines.filter((l)  => l.type === 'card' || l.type === 'sealed') },
               { label: 'Out', side: 'out', color: 'dimmed',   cardLines: outLines.filter((l) => l.type === 'card' || l.type === 'sealed') },
@@ -901,8 +913,14 @@ export default function TransactionCard({ tx, view = 'list' }) {
       {!isGrid && (
         <Collapse expanded={expanded}>
           <Divider my="sm" />
-          {renderInOutLines()}
-          {renderNotes()}
+          {linesLoading && loadedLines === null ? (
+            <Group justify="center" py="sm"><Loader size="xs" /></Group>
+          ) : (
+            <>
+              {renderInOutLines()}
+              {renderNotes()}
+            </>
+          )}
         </Collapse>
       )}
 

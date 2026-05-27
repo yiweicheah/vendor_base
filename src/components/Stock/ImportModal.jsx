@@ -8,7 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { IconUpload, IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { searchCards, extractPrice, getTcgplayerImageUrl } from '../../lib/pokewallet';
 import { tokenize, buildQuery, buildAlternateNumberQuery } from '../../lib/tokenizer';
-import { saveTransaction, saveTransactionLine, getOrCreateImportEvent } from '../../lib/db';
+import { saveTransaction, importTransactionLinesBulk, getOrCreateImportEvent } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import { rm, fmtMoney } from '../../lib/format';
 import useOrgStore from '../../store/orgStore';
@@ -262,35 +262,29 @@ export default function ImportModal({ opened, onClose }) {
         eventId:     importEvent.id,
       });
 
-      await Promise.all(
-        matched.map((line) =>
-          saveTransactionLine({
-            transactionId:  txId,
-            side:           line.side,
-            type:           line.type,
-            qty:            line.qty,
-            unitPriceMyr:   line.unitPriceMyr,
-            cardExternalId: line.cardExternalId,
-            cardName:       line.cardName,
-            cardNumber:     line.cardNumber,
-            cardSetName:    line.cardSetName,
-            cardLang:       line.cardLang,
-            cardImageUrl:   line.imageUrl,
-            marketPriceMyr: line.marketPriceMyr,
-            priceSource:    line.priceSource,
-            usdToMyrRate:   USD_TO_MYR,
-            eurToMyrRate:   EUR_TO_MYR,
-            sealedProductId:      null,
-            sealedName:           null,
-            sealedReferencePrice: null,
-          })
-        )
-      );
+      const lines = matched.map((line) => ({
+        side:           line.side,
+        type:           line.type,
+        qty:            line.qty,
+        unitPriceMyr:   line.unitPriceMyr,
+        cardExternalId: line.cardExternalId,
+        cardName:       line.cardName,
+        cardNumber:     line.cardNumber,
+        cardSetName:    line.cardSetName,
+        cardLang:       line.cardLang,
+        cardImageUrl:   line.imageUrl,
+        marketPriceMyr: line.marketPriceMyr,
+        priceSource:    line.priceSource,
+        usdToMyrRate:   USD_TO_MYR,
+        eurToMyrRate:   EUR_TO_MYR,
+        sealedProductId:      null,
+        sealedName:           null,
+        sealedReferencePrice: null,
+      }));
 
       const totalCost = matched.reduce((sum, l) => sum + (l.unitPriceMyr || 0) * l.qty, 0);
       if (totalCost > 0) {
-        await saveTransactionLine({
-          transactionId:  txId,
+        lines.push({
           side:           'out',
           type:           'cash',
           qty:            1,
@@ -302,6 +296,8 @@ export default function ImportModal({ opened, onClose }) {
           sealedProductId: null, sealedName: null, sealedReferencePrice: null,
         });
       }
+
+      await importTransactionLinesBulk(org.id, txId, lines);
 
       bumpHistoryRev();
       await Promise.all([

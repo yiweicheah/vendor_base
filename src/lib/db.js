@@ -183,14 +183,20 @@ export async function loadStock(orgId, { eventId } = {}) {
 // ─── Transactions ─────────────────────────────────────────────────────────────
 
 /**
- * Paginated transaction list for the History page. Filters, sort, and pagination
- * run server-side via the get_org_transactions_page RPC — the client never holds
- * the full transactions array. Pass null for any filter to disable it; eventId
- * '__none__' maps to the walk-in-only filter.
+ * Paginated transaction header list for the History page. Filters, sort, and
+ * pagination run server-side via the get_org_transactions_page RPC — the
+ * client never holds the full transactions array. Pass null for any filter to
+ * disable it; eventId '__none__' maps to the walk-in-only filter.
  *
- * Returns { rows, totalCount }. Each row matches the camelCase shape of
- * loadTransactions() entries (id, createdAt, notes, paymentMethod, event,
- * createdBy, transactionLines).
+ * Returns { rows, totalCount }. Each row carries the parent tx fields and
+ * precomputed scalar aggregates the collapsed History row needs — but NOT
+ * the underlying transaction_lines array. Use loadTransactionLines(orgId, txId)
+ * to lazy-load lines for the expanded view.
+ *
+ * Row shape (camelCase): id, createdAt, notes, paymentMethod, event,
+ *   createdBy, txType, inTotal, outTotal, cardInTotal, cardOutTotal,
+ *   cardInQty, cardOutQty, hasCashIn, hasCashOut, cardSoldTotal,
+ *   grossProfit, profitComplete.
  */
 export async function loadTransactionsPage(orgId, {
   eventId = null,
@@ -216,6 +222,21 @@ export async function loadTransactionsPage(orgId, {
   if (error) throw error;
   const payload = toCamel(data ?? { rows: [], total_count: 0 });
   return { rows: payload.rows ?? [], totalCount: payload.totalCount ?? 0 };
+}
+
+/**
+ * Lazy-load the transaction_lines array for one transaction. Powers
+ * TransactionCard's expand interaction — the slim page RPC omits lines so
+ * collapsed rows render without shipping unused jsonb. Validates org
+ * ownership server-side.
+ */
+export async function loadTransactionLines(orgId, txId) {
+  const { data, error } = await supabase.rpc('get_transaction_full', {
+    p_org_id: orgId,
+    p_tx_id:  txId,
+  });
+  if (error) throw error;
+  return toCamel(data ?? []);
 }
 
 /**
@@ -269,6 +290,23 @@ export async function saveTransactionLine(vars) {
   const { data, error } = await supabase.from('transaction_lines').insert(row).select('id').single();
   if (error) throw error;
   return data.id;
+}
+
+/**
+ * Bulk-insert transaction lines for an existing transaction. Each `lines` entry
+ * uses the same camelCase shape as `saveTransactionLine` (minus transactionId,
+ * which is server-set from txId). Powers ImportModal's confirm step so a
+ * 500-line CSV becomes one RPC instead of 500 INSERTs.
+ */
+export async function importTransactionLinesBulk(orgId, txId, lines) {
+  if (!lines.length) return [];
+  const { data, error } = await supabase.rpc('bulk_upsert_transaction_lines', {
+    p_org_id:         orgId,
+    p_transaction_id: txId,
+    p_lines:          toSnakeObj(lines),
+  });
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function deleteTransaction({ txId, deletedById }) {
@@ -342,6 +380,23 @@ export async function updateTransactionLine({ lineId, unitPriceMyr, qty }) {
     .update(updates)
     .eq('id', lineId);
   if (error) throw error;
+}
+
+/**
+ * Bulk-update transaction lines (price / qty). Each entry is
+ * { lineId, unitPriceMyr?, qty? } — only changed fields included. Validates
+ * server-side that every line's parent tx belongs to orgId; raises if any
+ * id is cross-org, stale, or under a soft-deleted tx.
+ */
+export async function updateTransactionLinesBulk(orgId, lines) {
+  if (!lines.length) return [];
+  const payload = lines.map(({ lineId, ...patch }) => ({ id: lineId, ...patch }));
+  const { data, error } = await supabase.rpc('update_transaction_lines_bulk', {
+    p_org_id: orgId,
+    p_lines:  toSnakeObj(payload),
+  });
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function deleteTransactionLine(lineId) {

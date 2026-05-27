@@ -137,6 +137,9 @@ export function buildStockMapFromRows(rows, priceOverrides = new Map()) {
         avgCost:        +(costBasis   / net).toFixed(2),
         avgMarket:      +(marketValue / net).toFixed(2),
         unrealizedGain: +(marketValue - costBasis).toFixed(2),
+        nameNorm:       row.nameNorm   ?? '',
+        setNorm:        row.setNorm    ?? '',
+        numberNorm:     row.numberNorm ?? '',
       });
     } else {
       map.set(row.key, {
@@ -146,6 +149,7 @@ export function buildStockMapFromRows(rows, priceOverrides = new Map()) {
         qty:     net,
         costBasis,
         avgCost: +(costBasis / net).toFixed(2),
+        nameNorm: row.nameNorm ?? '',
       });
     }
   }

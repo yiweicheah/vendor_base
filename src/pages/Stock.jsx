@@ -18,6 +18,7 @@ import {
   Paper,
   Tooltip,
 } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
 import {
   IconSearch,
   IconPackage,
@@ -573,6 +574,7 @@ export default function Stock() {
   const { user } = useAuthStore();
 
   const [query, setQuery] = useState("");
+  const [debouncedQuery] = useDebouncedValue(query, 250);
   const [sort, setSort] = useState("name-asc");
   const [eventFilter, setEventFilter] = useState("");
   const [importOpen, setImportOpen] = useState(false);
@@ -695,17 +697,20 @@ export default function Stock() {
   }, [allItems]);
 
   const filtered = useMemo(() => {
-    const q = normalizeStr(query.trim().toLowerCase());
+    // Per-item normalization happens server-side in get_org_stock (name_norm /
+    // set_norm / number_norm). Only the search query itself needs normalization
+    // on the client. Debounced so we don't run this on every keystroke.
+    const q = normalizeStr(debouncedQuery.trim().toLowerCase());
     const matching = q
       ? cardItems.filter(
           (item) =>
-            normalizeStr(item.name.toLowerCase()).includes(q) ||
-            normalizeStr((item.setName ?? "").toLowerCase()).includes(q) ||
-            normalizeStr((item.number ?? "").toLowerCase()).includes(q),
+            item.nameNorm.includes(q) ||
+            item.setNorm.includes(q) ||
+            item.numberNorm.includes(q),
         )
       : cardItems;
     return applySort(matching, sort);
-  }, [cardItems, query, sort]);
+  }, [cardItems, debouncedQuery, sort]);
 
   useEffect(() => {
     setPage(1);
