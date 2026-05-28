@@ -28,7 +28,7 @@ const DEFAULT_MPL = {
   grossProfit: 0, miscCosts: 0, fixedCosts: 0, netPL: 0,
 };
 import {
-  createFundEntry, updateFundEntry,
+  createFundEntry, updateFundEntry, deleteFundEntry,
   createFixedCost, updateFixedCost, deleteFixedCost,
   loadTransactionsForMonth,
 } from '../lib/db';
@@ -76,12 +76,14 @@ function SectionLabel({ children }) {
 function FundHistoryModal({ opened, onClose, funds }) {
   const role = useOrgStore((s) => s.role);
   const updateFundEntryInStore = useOrgStore((s) => s.updateFundEntry);
+  const removeFundEntryFromStore = useOrgStore((s) => s.removeFundEntry);
   const canEdit = role === 'owner' || role === 'admin';
 
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [editNote,  setEditNote]  = useState('');
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const total = funds.reduce((sum, f) => sum + (f.amountMyr ?? 0), 0);
 
@@ -106,11 +108,24 @@ function FundHistoryModal({ opened, onClose, funds }) {
       await updateFundEntry({ id, amountMyr: amt, note });
       updateFundEntryInStore(id, { amountMyr: amt, note });
       setEditingId(null);
-      notifications.show({ message: `Deposit updated.`, color: 'green', autoClose: 2000 });
+      notifications.show({ message: `Deposit updated.`, color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(id) {
+    setDeletingId(id);
+    try {
+      await deleteFundEntry(id);
+      removeFundEntryFromStore(id);
+      notifications.show({ message: 'Deposit deleted.', color: 'green' });
+    } catch (err) {
+      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -166,9 +181,23 @@ function FundHistoryModal({ opened, onClose, funds }) {
                           +{rm(f.amountMyr ?? 0)}
                         </Text>
                         {canEdit && (
-                          <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => startEdit(f)}>
-                            <IconPencil size={12} />
-                          </ActionIcon>
+                          <Group gap={2} wrap="nowrap">
+                            <ActionIcon
+                              size="xs" variant="subtle" color="gray"
+                              disabled={editingId !== null || !!deletingId}
+                              onClick={() => startEdit(f)}
+                            >
+                              <IconPencil size={12} />
+                            </ActionIcon>
+                            <ActionIcon
+                              size="xs" variant="subtle" color="red"
+                              loading={deletingId === f.id}
+                              disabled={editingId !== null || (!!deletingId && deletingId !== f.id)}
+                              onClick={() => handleDelete(f.id)}
+                            >
+                              <IconTrash size={12} />
+                            </ActionIcon>
+                          </Group>
                         )}
                       </Group>
                     </Group>
@@ -212,7 +241,7 @@ function AddFundsModal({ opened, onClose, org, user, onAdded }) {
       setAmount('');
       setNote('');
       onClose();
-      notifications.show({ message: `${rm(amt)} added to funds.`, color: 'green', autoClose: 2000 });
+      notifications.show({ message: `${rm(amt)} added to funds.`, color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -721,6 +750,7 @@ export default function Dashboard() {
   const miscCosts       = useOrgStore((s) => s.miscCosts);
   const fixedCosts      = useOrgStore((s) => s.fixedCosts);
   const metrics         = useOrgStore((s) => s.metrics);
+  const stock           = useOrgStore((s) => s.stock);
 const monthlyPL       = useOrgStore((s) => s.monthlyPL);
   const addFundEntry    = useOrgStore((s) => s.addFundEntry);
   const user            = useAuthStore((s) => s.user);
@@ -750,43 +780,19 @@ const monthlyPL       = useOrgStore((s) => s.monthlyPL);
 
   const mpl = monthlyPL.find((r) => r.month === effectivePlMonth) ?? DEFAULT_MPL;
 
-  const hasContent = (metrics?.txCount ?? 0) > 0 || funds.length > 0;
-  if (!hasContent) {
-    return (
-      <>
-        <Center h="100%">
-          <Stack align="center" gap="md">
-            <ThemeIcon size={48} variant="light" color="violet">
-              <IconChartBar size={28} />
-            </ThemeIcon>
-            <Text c="dimmed" size="sm">No transactions yet</Text>
-            {canAddFunds && (
-              <Button
-                size="xs"
-                variant="light"
-                leftSection={<IconPlus size={13} />}
-                onClick={() => setModalOpen(true)}
-              >
-                Add funds
-              </Button>
-            )}
-          </Stack>
-        </Center>
-        <AddFundsModal
-          opened={modalOpen}
-          onClose={() => setModalOpen(false)}
-          org={org}
-          user={user}
-          onAdded={addFundEntry}
-        />
-        <FundHistoryModal
-          opened={historyOpen}
-          onClose={() => setHistoryOpen(false)}
-          funds={funds}
-        />
-      </>
-    );
-  }
+  const sealedStock = useMemo(() => {
+    let qty = 0, cost = 0;
+    for (const row of stock) {
+      if (row.type !== 'sealed') continue;
+      const qtyIn  = Number(row.qtyIn)  || 0;
+      const qtyOut = Number(row.qtyOut) || 0;
+      const net    = qtyIn - qtyOut;
+      if (net <= 0 || qtyIn === 0) continue;
+      qty  += net;
+      cost += Number(row.costIn) * (net / qtyIn);
+    }
+    return { qty, cost: +cost.toFixed(2) };
+  }, [stock]);
 
   return (
     <>
@@ -860,8 +866,7 @@ const monthlyPL       = useOrgStore((s) => s.monthlyPL);
             </Stack>
 
             {/* ── P&L Summary ──────────────────────────────────────────────── */}
-            {(metrics?.txCount ?? 0) > 0 && (
-              <Stack gap="sm">
+            <Stack gap="sm">
                 <Group justify="space-between" align="center">
                   <Group gap={6} align="center">
                     <SectionLabel>P&L Summary</SectionLabel>
@@ -964,34 +969,33 @@ const monthlyPL       = useOrgStore((s) => s.monthlyPL);
                   </Stack>
                 </Paper>
               </Stack>
-            )}
 
             {/* ── Stock value ───────────────────────────────────────────────── */}
-            {m.stockQty > 0 && (
-              <Stack gap="sm">
-                <SectionLabel>Stock on Hand</SectionLabel>
-                <Paper withBorder p="md" radius="md">
-                  <Stack gap="xs">
-                    <MetaRow label="Cards in stock" value={`${m.stockQty} pcs`} />
-                    <Divider variant="dashed" />
-                    <MetaRow label="Value at cost"   value={rm(m.stockCost)} />
-                    <MetaRow label="Value at market" value={rm(m.stockMarket)} />
-                    <Divider />
-                    <Group justify="space-between">
-                      <Text size="sm" fw={600}>Unrealized</Text>
-                      <Group gap={4}>
-                        <ThemeIcon size="xs" variant="transparent" color={netColor(m.unrealizedGain)}>
-                          <TrendIcon value={m.unrealizedGain} />
-                        </ThemeIcon>
-                        <Text size="sm" fw={700} c={netColor(m.unrealizedGain)}>
-                          {sign(m.unrealizedGain)}{rm(m.unrealizedGain)}
-                        </Text>
-                      </Group>
+            <Stack gap="sm">
+              <SectionLabel>Stock on Hand</SectionLabel>
+              <Paper withBorder p="md" radius="md">
+                <Stack gap="xs">
+                  <MetaRow label="Cards in stock"  value={`${m.stockQty} pcs`} />
+                  <MetaRow label="Sealed in stock" value={`${sealedStock.qty} pcs`} />
+                  <Divider variant="dashed" />
+                  <MetaRow label="Cards at cost"   value={rm(m.stockCost)} />
+                  <MetaRow label="Cards at market" value={rm(m.stockMarket)} />
+                  <MetaRow label="Sealed at cost"  value={rm(sealedStock.cost)} />
+                  <Divider />
+                  <Group justify="space-between">
+                    <Text size="sm" fw={600}>Unrealized</Text>
+                    <Group gap={4}>
+                      <ThemeIcon size="xs" variant="transparent" color={netColor(m.unrealizedGain)}>
+                        <TrendIcon value={m.unrealizedGain} />
+                      </ThemeIcon>
+                      <Text size="sm" fw={700} c={netColor(m.unrealizedGain)}>
+                        {sign(m.unrealizedGain)}{rm(m.unrealizedGain)}
+                      </Text>
                     </Group>
-                  </Stack>
-                </Paper>
-              </Stack>
-            )}
+                  </Group>
+                </Stack>
+              </Paper>
+            </Stack>
 
           </Stack>
         </ScrollArea>

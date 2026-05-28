@@ -36,7 +36,7 @@ function DisplayNameField({ user, setUser }) {
       await supabase.auth.updateUser({ data: { display_name: trimmed } });
       setUser({ ...user, displayName: trimmed });
       setEditing(false);
-      notifications.show({ message: 'Display name updated.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Display name updated.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -100,7 +100,7 @@ function ChangePasswordForm() {
       await updatePassword(newPass);
       setNewPass('');
       setConfirmPass('');
-      notifications.show({ message: 'Password updated.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Password updated.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {

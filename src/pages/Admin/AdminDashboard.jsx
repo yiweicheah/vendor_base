@@ -94,7 +94,7 @@ function OrgRow({ org, onChanged }) {
       await sendInviteLink(inv.email);
       const iRes = await getOrgInvites({ orgId: org.id });
       setInvites(iRes ?? []);
-      notifications.show({ message: 'Invite resent.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Invite resent.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -134,7 +134,7 @@ function OrgRow({ org, onChanged }) {
       setInvites(iRes ?? []);
       setInvEmail('');
       setShowInvite(false);
-      notifications.show({ message: 'Invite sent.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Invite sent.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Invite failed', message: err.message, color: 'red' });
     } finally {
@@ -161,7 +161,7 @@ function OrgRow({ org, onChanged }) {
         try {
           await deleteOrgMember({ memberId: member.id });
           await refreshLists();
-          notifications.show({ message: 'Member removed.', color: 'red', autoClose: 2000 });
+          notifications.show({ message: 'Member removed.', color: 'red' });
         } catch (err) {
           notifications.show({ title: 'Failed', message: err.message, color: 'red' });
         }
@@ -179,7 +179,7 @@ function OrgRow({ org, onChanged }) {
         try {
           await deleteInvite({ inviteId: inv.id });
           await refreshLists();
-          notifications.show({ message: 'Invite deleted.', color: 'red', autoClose: 2000 });
+          notifications.show({ message: 'Invite deleted.', color: 'red' });
         } catch (err) {
           notifications.show({ title: 'Failed', message: err.message, color: 'red' });
         }
@@ -195,7 +195,7 @@ function OrgRow({ org, onChanged }) {
       await updateInviteEmail({ inviteId: inv.id, email: next });
       setEditingInviteId(null);
       await refreshLists();
-      notifications.show({ message: 'Invite email updated. Click resend to send a new link.', color: 'green', autoClose: 3000 });
+      notifications.show({ message: 'Invite email updated. Click resend to send a new link.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -208,7 +208,7 @@ function OrgRow({ org, onChanged }) {
     try {
       const next = memberLimit === '' || memberLimit == null ? null : Number(memberLimit);
       await updateOrgMemberLimit({ orgId: org.id, memberLimit: next });
-      notifications.show({ message: 'Member limit updated.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Member limit updated.', color: 'green' });
       setShowSettings(false);
       onChanged?.();
     } catch (err) {
@@ -487,7 +487,7 @@ function CreateOrgForm({ users, onCreated }) {
         await addOrgMember({ orgId, userId: owner.id, role: 'owner' });
       }
 
-      notifications.show({ message: `"${name.trim()}" created.`, color: 'green', autoClose: 3000 });
+      notifications.show({ message: `"${name.trim()}" created.`, color: 'green' });
       setName(''); setSlug(''); setOwnerEmail('');
       onCreated();
     } catch (err) {

@@ -164,7 +164,6 @@ export default function AddStockModal({ opened, onClose }) {
       notifications.show({
         message:   `${lines.length} card${lines.length !== 1 ? 's' : ''} added to stock.`,
         color:     'green',
-        autoClose: 3000,
       });
       onClose();
     } catch (err) {

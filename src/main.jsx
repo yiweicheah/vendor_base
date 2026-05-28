@@ -23,7 +23,7 @@ createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <MantineProvider theme={theme} defaultColorScheme="dark">
         <ModalsProvider>
-          <Notifications position="top-right" />
+          <Notifications position="top-right" autoClose={3000} />
           <App />
         </ModalsProvider>
       </MantineProvider>

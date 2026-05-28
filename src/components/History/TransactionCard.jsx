@@ -287,7 +287,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
             removeFundEntryFromStore(linkedFund.id);
           }
           if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
-          notifications.show({ message: 'Transaction deleted.', color: 'red', autoClose: 2000 });
+          notifications.show({ message: 'Transaction deleted.', color: 'red' });
         } catch (err) {
           notifications.show({ title: 'Delete failed', message: err.message, color: 'red' });
         } finally {
@@ -321,7 +321,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
           await refreshLines();
           bumpHistory();
           if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
-          notifications.show({ message: 'Line removed.', color: 'orange', autoClose: 2000 });
+          notifications.show({ message: 'Line removed.', color: 'orange' });
         } catch (err) {
           notifications.show({ title: 'Failed', message: err.message, color: 'red' });
         } finally {
@@ -398,7 +398,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
       setQtyEdits({});
       setEditing(false);
       if (org?.id) refreshAggregates(org.id);
-      notifications.show({ message: 'Transaction updated.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Transaction updated.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Save failed', message: err.message, color: 'red' });
     } finally {
@@ -433,7 +433,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
       await refreshLines();
       bumpHistory();
       if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
-      notifications.show({ message: 'Sealed product added.', color: 'teal', autoClose: 2000 });
+      notifications.show({ message: 'Sealed product added.', color: 'teal' });
     } catch (err) {
       notifications.show({ title: 'Failed to add sealed product', message: err.message, color: 'red' });
     }
@@ -454,7 +454,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
       await refreshLines();
       bumpHistory();
       if (org?.id) { refreshAggregates(org.id); refreshStock(org.id); }
-      notifications.show({ message: 'Bulk line added.', color: 'teal', autoClose: 2000 });
+      notifications.show({ message: 'Bulk line added.', color: 'teal' });
     } catch (err) {
       notifications.show({ title: 'Failed to add bulk', message: err.message, color: 'red' });
     }
@@ -495,7 +495,7 @@ export default function TransactionCard({ tx, view = 'list' }) {
       await refreshLines();
       bumpHistory();
       if (org?.id) refreshAggregates(org.id);
-      notifications.show({ message: 'Card added.', color: 'teal', autoClose: 2000 });
+      notifications.show({ message: 'Card added.', color: 'teal' });
     } catch (err) {
       notifications.show({ title: 'Failed to add card', message: err.message, color: 'red' });
     }

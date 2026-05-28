@@ -213,7 +213,6 @@ export default function SearchModal({ opened, onClose, side, onCardSelect }) {
       notifications.show({
         message:   `${cardName} (${setName}/${cardNumber}) added to ${side === 'in' ? 'coming in' : 'going out'}`,
         color:     side === 'in' ? 'violet' : 'gray',
-        autoClose: 2000,
       });
     }
   }, [side, addLine, onCardSelect]);

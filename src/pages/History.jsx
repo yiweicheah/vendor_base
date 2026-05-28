@@ -56,7 +56,7 @@ function EditEventModal({ event, onClose, onSaved }) {
       await updateEventDb({ eventId: event.id, ...patch });
       onSaved(patch);
       onClose();
-      notifications.show({ message: 'Event updated.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Event updated.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -238,7 +238,7 @@ export default function History() {
       removeEventInStore(deletingEvent.id);
       setEventFilter('all');
       setDeletingEvent(null);
-      notifications.show({ message: 'Event deleted.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Event deleted.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -278,7 +278,12 @@ export default function History() {
   );
 
   const selectedEventBreakdown = useMemo(
-    () => eventFilter !== 'all' ? (eventBreakdown.find((e) => e.id === eventFilter) ?? null) : null,
+    () => eventFilter !== 'all'
+      ? (eventBreakdown.find((e) => e.id === eventFilter) ?? {
+          id: eventFilter, totalOut: 0, totalIn: 0,
+          grossProfit: 0, profitComplete: true, miscCostTotal: 0, netPL: 0,
+        })
+      : null,
     [eventFilter, eventBreakdown],
   );
 
@@ -294,7 +299,7 @@ export default function History() {
     );
   }
 
-  if (!filterOptions.hasAny) {
+  if (!filterOptions.hasAny && events.length === 0) {
     return (
       <Center h="100%">
         <Stack align="center" gap="md">

@@ -22,7 +22,7 @@ export default function PaymentMethodSettings() {
     const trimmed = name.trim();
     if (!trimmed || !org?.id) return;
     if (paymentMethods.some((m) => m.name.toLowerCase() === trimmed.toLowerCase())) {
-      notifications.show({ message: 'Already exists.', color: 'orange', autoClose: 2000 });
+      notifications.show({ message: 'Already exists.', color: 'orange' });
       return;
     }
     setAdding(true);

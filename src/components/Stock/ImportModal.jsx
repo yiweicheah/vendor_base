@@ -308,7 +308,6 @@ export default function ImportModal({ opened, onClose }) {
       notifications.show({
         message:   `${matched.length} card${matched.length !== 1 ? 's' : ''} imported successfully.`,
         color:     'green',
-        autoClose: 3000,
       });
       handleClose();
     } catch (err) {

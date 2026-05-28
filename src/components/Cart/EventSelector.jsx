@@ -66,7 +66,7 @@ function CreateEventForm({ onCreated }) {
         setActiveEventId(newId);
       }
       onCreated();
-      notifications.show({ message: 'Event created.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Event created.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {

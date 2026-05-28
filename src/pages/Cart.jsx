@@ -317,7 +317,6 @@ export default function Cart() {
       notifications.show({
         message:   'Transaction saved.',
         color:     'green',
-        autoClose: 2000,
       });
       clearCart();
       setPaymentMethod(null);

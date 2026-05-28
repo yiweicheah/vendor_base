@@ -61,7 +61,7 @@ function MemberList({ members, myRole, myUserId, isSuperuser, onChanged }) {
       onConfirm: async () => {
         try {
           await deleteOrgMember({ memberId: member.id });
-          notifications.show({ message: 'Member removed.', color: 'red', autoClose: 2000 });
+          notifications.show({ message: 'Member removed.', color: 'red' });
           onChanged?.();
         } catch (err) {
           notifications.show({ title: 'Failed', message: err.message, color: 'red' });
@@ -142,7 +142,7 @@ function InviteForm({ org, user, used, onCreated }) {
       await sendInviteLink(normalised);
       setEmail('');
       onCreated(); // refetch invites to get the token
-      notifications.show({ message: 'Invite sent.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Invite sent.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -203,7 +203,7 @@ function PendingInviteRow({ invite, invitedById, myRole, isSuperuser, onChanged 
       await regenerateInvite({ inviteId: invite.id, invitedById });
       await sendInviteLink(invite.email);
       onChanged?.();
-      notifications.show({ message: 'Invite resent.', color: 'green', autoClose: 2000 });
+      notifications.show({ message: 'Invite resent.', color: 'green' });
     } catch (err) {
       notifications.show({ title: 'Failed', message: err.message, color: 'red' });
     } finally {
@@ -217,7 +217,7 @@ function PendingInviteRow({ invite, invitedById, myRole, isSuperuser, onChanged 
     setSavingEmail(true);
     try {
       await updateInviteEmail({ inviteId: invite.id, email: next });
-      notifications.show({ message: 'Invite email updated. Click resend to send a new link.', color: 'green', autoClose: 3000 });
+      notifications.show({ message: 'Invite email updated. Click resend to send a new link.', color: 'green' });
       setEditing(false);
       onChanged?.();
     } catch (err) {
@@ -236,7 +236,7 @@ function PendingInviteRow({ invite, invitedById, myRole, isSuperuser, onChanged 
       onConfirm: async () => {
         try {
           await deleteInvite({ inviteId: invite.id });
-          notifications.show({ message: 'Invite deleted.', color: 'red', autoClose: 2000 });
+          notifications.show({ message: 'Invite deleted.', color: 'red' });
           onChanged?.();
         } catch (err) {
           notifications.show({ title: 'Failed', message: err.message, color: 'red' });

@@ -108,7 +108,6 @@ export default function StockPickerModal({ opened, onClose, onSearchFallback }) 
     notifications.show({
       message:   `${item.name} (${item.setName}/${item.number}) added to going out`,
       color:     'gray',
-      autoClose: 2000,
     });
   }
 
