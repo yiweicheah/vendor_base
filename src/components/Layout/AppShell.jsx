@@ -33,7 +33,7 @@ const VIEW_TITLES = {
   history:   'History',
   dashboard: 'Dashboard',
   stock:     'Stock',
-  team:      'Team',
+  team:      'Org',
   user:      'Account',
 };
 
@@ -42,7 +42,7 @@ const NAV_ITEMS = [
   { id: 'history',   label: 'History',   Icon: IconHistory },
   { id: 'dashboard', label: 'Dashboard', Icon: IconChartBar },
   { id: 'stock',     label: 'Stock',     Icon: IconPackage },
-  { id: 'team',      label: 'Team',      Icon: IconUsers },
+  { id: 'team',      label: 'Org',       Icon: IconUsers },
 ];
 
 function NavButton({ item, active, onClick }) {

@@ -4,6 +4,7 @@ import { Center, Loader } from '@mantine/core';
 import { supabase } from './lib/supabase';
 import useAuthStore from './store/authStore';
 import useOrgStore from './store/orgStore';
+import useCartStore from './store/cartStore';
 import { resolveUser, loadAllMemberships, loadEvents, loadFunds, loadPaymentMethods, loadEventMiscCosts, loadFixedCosts, loadSealedProducts, loadMetrics, loadEventBreakdown, loadMonthlyPL, loadStock } from './lib/db';
 import { fetchExchangeRates } from './lib/exchangeRates';
 import { isSuperuserUid } from './lib/superuser';
@@ -19,7 +20,7 @@ import UpdatePassword from './pages/UpdatePassword';
 const CartPage       = lazy(() => import('./pages/Cart'));
 const HistoryPage    = lazy(() => import('./pages/History'));
 const DashboardPage  = lazy(() => import('./pages/Dashboard'));
-const TeamPage       = lazy(() => import('./pages/Team'));
+const OrgPage        = lazy(() => import('./pages/Org'));
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 const StockPage      = lazy(() => import('./pages/Stock'));
 const UserPage       = lazy(() => import('./pages/User'));
@@ -43,7 +44,7 @@ function MainApp({ onSwitchOrg, switchingOrg }) {
       </div>
       {view === 'dashboard' && <DashboardPage />}
       {view === 'stock'     && <StockPage />}
-      {view === 'team'      && <TeamPage />}
+      {view === 'team'      && <OrgPage />}
       {view === 'user'      && <UserPage onBack={() => handleSetView('cart')} />}
     </Shell>
   );
@@ -52,6 +53,7 @@ function MainApp({ onSwitchOrg, switchingOrg }) {
 export default function App() {
   const [switchingOrg, setSwitchingOrg] = useState(false);
   const { user, setUser, clearAuth, loading: authLoading } = useAuthStore();
+  const clearCart = useCartStore((s) => s.clearCart);
   const {
     org, memberships,
     setMembership, setMemberships, clearOrgData,
@@ -177,6 +179,7 @@ export default function App() {
     localStorage.removeItem('selectedEventId');
     setMembership(next.org, next.role);
     clearOrgData();
+    clearCart();
     setSwitchingOrg(true);
     try {
       const [events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock] = await Promise.all([

@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Box, ScrollArea, Stack, Text, Center, ThemeIcon, Loader, LoadingOverlay,
   Group, ActionIcon, Select, Modal, TextInput, Button, Pagination,
-  Paper, Divider,
+  Paper, Divider, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconHistory, IconLayoutList, IconLayoutGrid, IconPencil, IconTrash, IconReceipt } from '@tabler/icons-react';
+import { IconHistory, IconLayoutList, IconLayoutGrid, IconPencil, IconTrash, IconReceipt, IconInfoCircle } from '@tabler/icons-react';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
 import TransactionCard from '../components/History/TransactionCard';
@@ -165,6 +165,18 @@ export default function History() {
 
   // ─── Server-side data fetching ─────────────────────────────────────────────
   const orgId = org?.id ?? null;
+
+  const prevOrgIdRef = useRef(null);
+  useEffect(() => {
+    if (prevOrgIdRef.current !== null && prevOrgIdRef.current !== orgId) {
+      setFilterRaw('all');        localStorage.setItem('history_event_filter',   'all');
+      setTypeFilterRaw('all');    localStorage.setItem('history_type_filter',    'all');
+      setCreatorFilterRaw('all'); localStorage.setItem('history_creator_filter', 'all');
+      setPaymentFilterRaw('all'); localStorage.setItem('history_payment_filter', 'all');
+      setPage(1);
+    }
+    prevOrgIdRef.current = orgId;
+  }, [orgId]); // eslint-disable-line
 
   // Filter options: refetch on org change or when creators/payment methods could have changed.
   // Uses filterOptionsRev (not historyRev) so inline edits (notes, event tag, line prices)
@@ -441,9 +453,19 @@ export default function History() {
                   <Text size="xs" c="dimmed">−{rm(selectedEventBreakdown.totalIn)}</Text>
                 </Group>
                 <Group justify="space-between">
-                  <Text size="xs" c="dimmed">
-                    Gross profit{!selectedEventBreakdown.profitComplete ? ' ~' : ''}
-                  </Text>
+                  <Group gap={4} wrap="nowrap">
+                    <Text size="xs" c="dimmed">
+                      Est. gross profit{!selectedEventBreakdown.profitComplete ? ' ~' : ''}
+                    </Text>
+                    <Tooltip
+                      label="Gross profit is estimated — COGS may be incorrect if a previous import or purchase price was changed after the sale."
+                      multiline
+                      w={240}
+                      withArrow
+                    >
+                      <IconInfoCircle size={12} style={{ color: 'var(--mantine-color-dimmed)', cursor: 'default', flexShrink: 0 }} />
+                    </Tooltip>
+                  </Group>
                   <Text size="xs" fw={500} c={netColor(selectedEventBreakdown.grossProfit)}>
                     {sign(selectedEventBreakdown.grossProfit)}{rm(selectedEventBreakdown.grossProfit)}
                   </Text>
@@ -456,7 +478,17 @@ export default function History() {
                 )}
                 <Divider variant="dashed" />
                 <Group justify="space-between">
-                  <Text size="xs" fw={600}>Net P&L</Text>
+                  <Group gap={4} wrap="nowrap">
+                    <Text size="xs" fw={600}>Est. Net P&L</Text>
+                    <Tooltip
+                      label="Net P&L is estimated — COGS may be incorrect if a previous import or purchase price was changed after the sale."
+                      multiline
+                      w={240}
+                      withArrow
+                    >
+                      <IconInfoCircle size={12} style={{ color: 'var(--mantine-color-dimmed)', cursor: 'default', flexShrink: 0 }} />
+                    </Tooltip>
+                  </Group>
                   <Text size="xs" fw={600} c={netColor(selectedEventBreakdown.netPL)}>
                     {sign(selectedEventBreakdown.netPL)}{rm(selectedEventBreakdown.netPL)}
                   </Text>

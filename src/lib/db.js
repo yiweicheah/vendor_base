@@ -91,13 +91,13 @@ export async function updateUserDisplayName({ dbId, displayName }) {
 
 /**
  * Load all org memberships for the given DB user UUID.
- * Returns [{ org: { id, name, slug }, role }].
+ * Returns [{ org: { id, name, slug, memberLimit }, role }].
  */
 export async function loadAllMemberships(dbUserId) {
   try {
     const { data, error } = await supabase
       .from('organization_members')
-      .select('role, org:organization!org_id(id, name, slug)')
+      .select('role, org:organization!org_id(id, name, slug, member_limit)')
       .eq('user_id', dbUserId);
     if (error) throw error;
     return (data ?? []).map((m) => ({ org: toCamel(m.org), role: m.role }));
@@ -407,6 +407,19 @@ export async function deleteTransactionLine(lineId) {
   if (error) throw error;
 }
 
+/**
+ * Replay a card's transaction lines in chronological order (AVCO) and rewrite
+ * avg_cost_myr on every downstream sale line. Pass null for cardExternalId to
+ * recalculate every card in the org.
+ */
+export async function recalculateAvgCosts(orgId, cardExternalId = null) {
+  const { error } = await supabase.rpc('recalculate_avg_costs', {
+    p_org_id:           orgId,
+    p_card_external_id: cardExternalId,
+  });
+  if (error) throw error;
+}
+
 // ─── Price cache ─────────────────────────────────────────────────────────────
 
 export async function getCachedPrices(cardIds) {
@@ -614,6 +627,30 @@ export async function addOrgMember({ orgId, userId, role }) {
   if (error) throw error;
 }
 
+export async function deleteOrgMember({ memberId }) {
+  const { error } = await supabase
+    .from('organization_members')
+    .delete()
+    .eq('id', memberId);
+  if (error) throw error;
+}
+
+export async function updateInviteEmail({ inviteId, email }) {
+  const { error } = await supabase
+    .from('invite')
+    .update({ email: email.toLowerCase() })
+    .eq('id', inviteId);
+  if (error) throw error;
+}
+
+export async function deleteInvite({ inviteId }) {
+  const { error } = await supabase
+    .from('invite')
+    .delete()
+    .eq('id', inviteId);
+  if (error) throw error;
+}
+
 // ─── Fund entries ─────────────────────────────────────────────────────────────
 
 export async function loadFunds(orgId) {
@@ -795,10 +832,18 @@ export async function deleteSealedProduct(id) {
 export async function getAllOrganizations() {
   const { data, error } = await supabase
     .from('organization')
-    .select('id, name, slug, created_at, deleted_at')
+    .select('id, name, slug, member_limit, created_at, deleted_at')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return toCamel(data ?? []);
+}
+
+export async function updateOrgMemberLimit({ orgId, memberLimit }) {
+  const { error } = await supabase
+    .from('organization')
+    .update({ member_limit: memberLimit })
+    .eq('id', orgId);
+  if (error) throw error;
 }
 
 export async function getAllUsers() {

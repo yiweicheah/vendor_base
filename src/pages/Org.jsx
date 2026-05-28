@@ -99,7 +99,11 @@ function MemberList({ members, myRole, myUserId, isSuperuser, onChanged }) {
   );
 }
 
-function InviteForm({ org, user, used, onCreated }) {
+function InviteForm({ org, user, used, myRole, onCreated }) {
+  const roleOptions = myRole === 'owner'
+    ? [{ value: 'admin', label: 'Admin' }, { value: 'staff', label: 'Staff' }]
+    : [{ value: 'staff', label: 'Staff' }];
+
   const [email,   setEmail]   = useState('');
   const [role,    setRole]    = useState('staff');
   const [loading, setLoading] = useState(false);
@@ -166,10 +170,7 @@ function InviteForm({ org, user, used, onCreated }) {
           label="Role"
           value={role}
           onChange={(v) => setRole(v ?? 'staff')}
-          data={[
-            { value: 'admin', label: 'Admin' },
-            { value: 'staff', label: 'Staff' },
-          ]}
+          data={roleOptions}
           size="sm"
         />
         <Button
@@ -320,7 +321,7 @@ function PendingInviteRow({ invite, invitedById, myRole, isSuperuser, onChanged 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function Team() {
+export default function Org() {
   const org  = useOrgStore((s) => s.org);
   const role = useOrgStore((s) => s.role);
   const user = useAuthStore((s) => s.user);
@@ -430,29 +431,56 @@ export default function Team() {
                         {used} / {memberLimit} used
                       </Text>
                     )}
-                    <InviteForm org={org} user={user} used={used} onCreated={fetchInvites} />
+                    <InviteForm org={org} user={user} used={used} myRole={role} onCreated={fetchInvites} />
 
-                    <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
-                      Pending invites
-                    </Text>
                     {loadingI ? (
                       <Text size="xs" c="dimmed">Loading…</Text>
-                    ) : invites.length === 0 ? (
-                      <Text size="xs" c="dimmed">No invites sent yet.</Text>
-                    ) : (
-                      <Stack gap="sm">
-                        {invites.map((inv) => (
-                          <PendingInviteRow
-                            key={inv.id}
-                            invite={inv}
-                            invitedById={user.dbId}
-                            myRole={role}
-                            isSuperuser={user?.isSuperuser}
-                            onChanged={fetchInvites}
-                          />
-                        ))}
-                      </Stack>
-                    )}
+                    ) : (() => {
+                      const pending  = invites.filter((i) => !i.acceptedAt);
+                      const accepted = invites.filter((i) =>  i.acceptedAt);
+                      return (
+                        <>
+                          <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
+                            Pending invites
+                          </Text>
+                          {pending.length === 0 ? (
+                            <Text size="xs" c="dimmed">No pending invites.</Text>
+                          ) : (
+                            <Stack gap="sm">
+                              {pending.map((inv) => (
+                                <PendingInviteRow
+                                  key={inv.id}
+                                  invite={inv}
+                                  invitedById={user.dbId}
+                                  myRole={role}
+                                  isSuperuser={user?.isSuperuser}
+                                  onChanged={fetchInvites}
+                                />
+                              ))}
+                            </Stack>
+                          )}
+                          {accepted.length > 0 && (
+                            <>
+                              <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em', marginTop: 4 }}>
+                                Accepted invites
+                              </Text>
+                              <Stack gap="sm">
+                                {accepted.map((inv) => (
+                                  <PendingInviteRow
+                                    key={inv.id}
+                                    invite={inv}
+                                    invitedById={user.dbId}
+                                    myRole={role}
+                                    isSuperuser={user?.isSuperuser}
+                                    onChanged={fetchInvites}
+                                  />
+                                ))}
+                              </Stack>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </Stack>
                 </Collapse>
               </Stack>

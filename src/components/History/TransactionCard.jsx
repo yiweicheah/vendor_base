@@ -14,7 +14,7 @@ import {
   deleteTransaction, updateTransactionNotes,
   updateTransactionLinesBulk, deleteTransactionLine, saveTransactionLine,
   updateFundEntry, deleteFundEntry, updateTransactionEvent,
-  updateTransactionPaymentMethod, loadTransactionLines,
+  updateTransactionPaymentMethod, loadTransactionLines, recalculateAvgCosts,
 } from '../../lib/db';
 import { getRates } from '../../lib/exchangeRates';
 import { rm } from '../../lib/format';
@@ -367,6 +367,18 @@ export default function TransactionCard({ tx, view = 'list' }) {
       await Promise.all(ops);
       if (linePatches.length > 0 && org?.id) {
         await updateTransactionLinesBulk(org.id, linePatches);
+        // If any edited import line was a tracked card, replay its cost basis
+        // so downstream sales' avg_cost_myr (and gross profit) stay in sync.
+        const affectedCards = new Set();
+        for (const patch of linePatches) {
+          const line = lines.find((l) => l.id === patch.lineId);
+          if (line?.side === 'in' && line?.type === 'card' && line?.cardExternalId) {
+            affectedCards.add(line.cardExternalId);
+          }
+        }
+        for (const cardExternalId of affectedCards) {
+          await recalculateAvgCosts(org.id, cardExternalId);
+        }
       }
       if (isImport && loadedLines !== null) {
         const newTotal = lines

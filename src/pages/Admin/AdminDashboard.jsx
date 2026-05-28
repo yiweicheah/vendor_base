@@ -1,19 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Box, ScrollArea, Stack, Group, Text, Paper, Badge,
-  Button, TextInput, Select, ActionIcon, Collapse,
+  Button, TextInput, NumberInput, Select, ActionIcon, Collapse,
   Divider, ThemeIcon, CopyButton, Tooltip, Alert,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { modals } from '@mantine/modals';
 import {
   IconLogout, IconChevronDown, IconChevronUp,
   IconBuilding, IconUsers, IconPlus, IconCopy,
   IconCheck, IconAlertCircle, IconMail, IconRefresh,
+  IconSettings, IconTrash, IconPencil, IconX,
 } from '@tabler/icons-react';
 import {
   getAllOrganizations, getAllUsers,
   getOrgMembers, getOrgInvites,
   createOrganization, addOrgMember, createInvite, isEmailAlreadyOrgMember, hasPendingOrgInvite, regenerateInvite,
+  updateOrgMemberLimit, deleteOrgMember, updateInviteEmail, deleteInvite,
 } from '../../lib/db';
 import { signOut, sendInviteLink } from '../../lib/auth';
 import { useNavigate } from 'react-router-dom';
@@ -43,7 +46,7 @@ function inviteLink(token) {
 
 // ─── Org row ──────────────────────────────────────────────────────────────────
 
-function OrgRow({ org }) {
+function OrgRow({ org, onChanged }) {
   const user = useAuthStore((s) => s.user);
 
   const [expanded,    setExpanded]    = useState(false);
@@ -56,6 +59,16 @@ function OrgRow({ org }) {
   const [invRole,     setInvRole]     = useState('staff');
   const [invLoading,  setInvLoading]  = useState(false);
   const [resendingId, setResendingId] = useState(null);
+
+  // Member-limit editor state
+  const [showSettings, setShowSettings] = useState(false);
+  const [memberLimit, setMemberLimit]   = useState(org.memberLimit ?? '');
+  const [savingLimit, setSavingLimit]   = useState(false);
+
+  // Inline invite-email edit state
+  const [editingInviteId, setEditingInviteId] = useState(null);
+  const [editEmail,       setEditEmail]       = useState('');
+  const [savingEmail,     setSavingEmail]     = useState(false);
 
   async function handleExpand() {
     setExpanded((v) => !v);
@@ -129,6 +142,82 @@ function OrgRow({ org }) {
     }
   }
 
+  async function refreshLists() {
+    const [mRes, iRes] = await Promise.all([
+      getOrgMembers({ orgId: org.id }),
+      getOrgInvites({ orgId: org.id }),
+    ]);
+    setMembers(mRes ?? []);
+    setInvites(iRes ?? []);
+  }
+
+  function handleRemoveMember(member) {
+    modals.openConfirmModal({
+      title: 'Remove member',
+      children: <Text size="sm">Remove <b>{member.user.displayName || member.user.email}</b> from this organisation?</Text>,
+      labels: { confirm: 'Remove', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await deleteOrgMember({ memberId: member.id });
+          await refreshLists();
+          notifications.show({ message: 'Member removed.', color: 'red', autoClose: 2000 });
+        } catch (err) {
+          notifications.show({ title: 'Failed', message: err.message, color: 'red' });
+        }
+      },
+    });
+  }
+
+  function handleDeleteInvite(inv) {
+    modals.openConfirmModal({
+      title: 'Delete invite',
+      children: <Text size="sm">Revoke the pending invite for <b>{inv.email}</b>?</Text>,
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await deleteInvite({ inviteId: inv.id });
+          await refreshLists();
+          notifications.show({ message: 'Invite deleted.', color: 'red', autoClose: 2000 });
+        } catch (err) {
+          notifications.show({ title: 'Failed', message: err.message, color: 'red' });
+        }
+      },
+    });
+  }
+
+  async function handleSaveInviteEmail(inv) {
+    const next = editEmail.trim().toLowerCase();
+    if (!next || next === inv.email) { setEditingInviteId(null); return; }
+    setSavingEmail(true);
+    try {
+      await updateInviteEmail({ inviteId: inv.id, email: next });
+      setEditingInviteId(null);
+      await refreshLists();
+      notifications.show({ message: 'Invite email updated. Click resend to send a new link.', color: 'green', autoClose: 3000 });
+    } catch (err) {
+      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
+    } finally {
+      setSavingEmail(false);
+    }
+  }
+
+  async function handleSaveLimit() {
+    setSavingLimit(true);
+    try {
+      const next = memberLimit === '' || memberLimit == null ? null : Number(memberLimit);
+      await updateOrgMemberLimit({ orgId: org.id, memberLimit: next });
+      notifications.show({ message: 'Member limit updated.', color: 'green', autoClose: 2000 });
+      setShowSettings(false);
+      onChanged?.();
+    } catch (err) {
+      notifications.show({ title: 'Failed', message: err.message, color: 'red' });
+    } finally {
+      setSavingLimit(false);
+    }
+  }
+
   const pendingInvites = (invites ?? []).filter(
     (inv) => !inv.acceptedAt && !isExpired(inv.expiresAt)
   );
@@ -159,6 +248,53 @@ function OrgRow({ org }) {
       <Collapse expanded={expanded}>
         <Divider my="sm" />
 
+        {/* Settings */}
+        <Stack gap={4} mb="sm">
+          <Group justify="space-between">
+            <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.06em' }}>Settings</Text>
+            {!showSettings && (
+              <Button
+                variant="subtle" color="gray" size="xs"
+                leftSection={<IconSettings size={12} />}
+                onClick={() => { setMemberLimit(org.memberLimit ?? ''); setShowSettings(true); }}
+              >
+                Edit
+              </Button>
+            )}
+          </Group>
+          {!showSettings ? (
+            <Text size="xs" c="dimmed">
+              Member limit: {org.memberLimit ?? 'Unlimited'}
+            </Text>
+          ) : (
+            <Stack gap="xs">
+              <NumberInput
+                label="Member limit"
+                description="Counts current members + pending invites. Leave blank for unlimited."
+                placeholder="Unlimited"
+                value={memberLimit}
+                onChange={(v) => setMemberLimit(v)}
+                min={1}
+                clampBehavior="strict"
+                size="xs"
+                allowNegative={false}
+                allowDecimal={false}
+              />
+              <Group gap="xs">
+                <Button size="xs" loading={savingLimit} onClick={handleSaveLimit}>Save</Button>
+                <Button
+                  variant="subtle" color="gray" size="xs"
+                  onClick={() => { setShowSettings(false); setMemberLimit(org.memberLimit ?? ''); }}
+                >
+                  Cancel
+                </Button>
+              </Group>
+            </Stack>
+          )}
+        </Stack>
+
+        <Divider my="sm" />
+
         {/* Members */}
         {members === null ? (
           <Text size="xs" c="dimmed">Loading…</Text>
@@ -176,6 +312,11 @@ function OrgRow({ org }) {
                 <Group gap="xs" style={{ flexShrink: 0 }}>
                   <Badge color={ROLE_COLOR[m.role] ?? 'gray'} variant="light" size="xs">{m.role}</Badge>
                   <Text size="10px" c="dimmed">{fmt(m.joinedAt)}</Text>
+                  <Tooltip label="Remove member" withArrow>
+                    <ActionIcon variant="subtle" color="red" size="xs" onClick={() => handleRemoveMember(m)}>
+                      <IconTrash size={12} />
+                    </ActionIcon>
+                  </Tooltip>
                 </Group>
               </Group>
             ))}
@@ -186,42 +327,79 @@ function OrgRow({ org }) {
         {pendingInvites.length > 0 && (
           <Stack gap={4} mb="sm">
             <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.06em' }}>Pending invites</Text>
-            {pendingInvites.map((inv) => (
-              <Group key={inv.id} justify="space-between" wrap="nowrap">
-                <Stack gap={0} style={{ minWidth: 0 }}>
-                  <Text size="xs" truncate>{inv.email}</Text>
-                  <Text size="10px" c="dimmed">Expires {fmt(inv.expiresAt)}</Text>
-                </Stack>
-                <Group gap="xs" style={{ flexShrink: 0 }}>
-                  <Badge color={ROLE_COLOR[inv.role] ?? 'gray'} variant="light" size="xs">{inv.role}</Badge>
-                  <CopyButton value={inviteLink(inv.token)} timeout={2000}>
-                    {({ copied, copy }) => (
-                      <Tooltip label={copied ? 'Copied!' : 'Copy invite link'} withArrow>
+            {pendingInvites.map((inv) => {
+              const editingThis = editingInviteId === inv.id;
+              return (
+                <Group key={inv.id} justify="space-between" wrap="nowrap">
+                  <Stack gap={0} style={{ minWidth: 0, flex: 1 }}>
+                    {editingThis ? (
+                      <Group gap={4} wrap="nowrap">
+                        <TextInput
+                          type="email"
+                          value={editEmail}
+                          onChange={(e) => setEditEmail(e.currentTarget.value)}
+                          size="xs"
+                          style={{ flex: 1 }}
+                          autoFocus
+                        />
+                        <ActionIcon variant="subtle" color="green" size="xs" loading={savingEmail} onClick={() => handleSaveInviteEmail(inv)}>
+                          <IconCheck size={12} />
+                        </ActionIcon>
+                        <ActionIcon variant="subtle" color="gray" size="xs" onClick={() => setEditingInviteId(null)}>
+                          <IconX size={12} />
+                        </ActionIcon>
+                      </Group>
+                    ) : (
+                      <Text size="xs" truncate>{inv.email}</Text>
+                    )}
+                    <Text size="10px" c="dimmed">Expires {fmt(inv.expiresAt)}</Text>
+                  </Stack>
+                  {!editingThis && (
+                    <Group gap="xs" style={{ flexShrink: 0 }}>
+                      <Badge color={ROLE_COLOR[inv.role] ?? 'gray'} variant="light" size="xs">{inv.role}</Badge>
+                      <CopyButton value={inviteLink(inv.token)} timeout={2000}>
+                        {({ copied, copy }) => (
+                          <Tooltip label={copied ? 'Copied!' : 'Copy invite link'} withArrow>
+                            <ActionIcon
+                              variant="subtle"
+                              color={copied ? 'green' : 'gray'}
+                              size="xs"
+                              onClick={copy}
+                            >
+                              {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
+                      </CopyButton>
+                      <Tooltip label="Resend invite" withArrow>
                         <ActionIcon
                           variant="subtle"
-                          color={copied ? 'green' : 'gray'}
+                          color="violet"
                           size="xs"
-                          onClick={copy}
+                          loading={resendingId === inv.id}
+                          onClick={() => handleResend(inv)}
                         >
-                          {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                          <IconRefresh size={12} />
                         </ActionIcon>
                       </Tooltip>
-                    )}
-                  </CopyButton>
-                  <Tooltip label="Resend invite" withArrow>
-                    <ActionIcon
-                      variant="subtle"
-                      color="violet"
-                      size="xs"
-                      loading={resendingId === inv.id}
-                      onClick={() => handleResend(inv)}
-                    >
-                      <IconRefresh size={12} />
-                    </ActionIcon>
-                  </Tooltip>
+                      <Tooltip label="Edit email" withArrow>
+                        <ActionIcon
+                          variant="subtle" color="gray" size="xs"
+                          onClick={() => { setEditEmail(inv.email); setEditingInviteId(inv.id); }}
+                        >
+                          <IconPencil size={12} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label="Delete invite" withArrow>
+                        <ActionIcon variant="subtle" color="red" size="xs" onClick={() => handleDeleteInvite(inv)}>
+                          <IconTrash size={12} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                  )}
                 </Group>
-              </Group>
-            ))}
+              );
+            })}
           </Stack>
         )}
 
@@ -471,7 +649,7 @@ export default function AdminDashboard() {
               <Text size="xs" c="dimmed">No organisations yet.</Text>
             ) : (
               <Stack gap="xs">
-                {orgs.map((o) => <OrgRow key={o.id} org={o} />)}
+                {orgs.map((o) => <OrgRow key={o.id} org={o} onChanged={fetchOrgs} />)}
               </Stack>
             )}
           </Stack>
