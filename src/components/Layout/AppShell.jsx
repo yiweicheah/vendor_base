@@ -202,7 +202,7 @@ export default function Shell({ view, setView, onSwitchOrg, onOpenUser, switchin
             ))}
           </Group>
           <Text size="10px" c="dimmed" ta="center" pb={2}>
-            {rateLabel}{priceLabel ? ` · ${priceLabel}` : ''}
+            {`v${__APP_VERSION__}`}{rateLabel ? ` · ${rateLabel}` : ''}{priceLabel ? ` · ${priceLabel}` : ''}
           </Text>
         </Stack>
       </AppShell.Footer>
