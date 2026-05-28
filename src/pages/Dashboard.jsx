@@ -620,19 +620,31 @@ function ExportPLModal({ opened, onClose, miscCosts, fixedCosts, events, monthly
     lines.push('');
 
     // Block 2: transaction detail
-    lines.push(row('Date', 'Type', 'Category', 'Description', 'Amount'));
+    lines.push(row('Date', 'Type', 'Category', 'Item', 'Amount'));
 
     for (const tx of filteredTxs) {
       const date = toDate(tx.createdAt);
-      let cardRev = 0, sealedRev = 0;
       for (const line of tx.transactionLines ?? []) {
-        if (line.side !== 'out') continue;
+        if (line.side !== 'out' || line.type === 'cash') continue;
         const value = (line.unitPriceMyr || 0) * line.qty;
-        if (line.type === 'card')   cardRev   += value;
-        else if (line.type === 'sealed') sealedRev += value;
+        if (value === 0) continue;
+        let category, itemName;
+        if (line.type === 'card' && line.cardExternalId) {
+          category = 'Single Card';
+          const rawParts = [line.cardName, line.cardSetName, line.cardNumber].filter(Boolean);
+          itemName = rawParts.filter((v, i) => rawParts.indexOf(v) === i).join(' - ');
+        } else if (line.type === 'card') {
+          category = 'Bulk';
+          itemName = line.cardName ?? 'Bulk cards';
+        } else if (line.type === 'sealed') {
+          category = 'Sealed';
+          itemName = line.sealedName ?? 'Sealed Product';
+        } else {
+          category = 'Other';
+          itemName = 'Other';
+        }
+        lines.push(row(date, 'Revenue', category, itemName, value.toFixed(2)));
       }
-      if (cardRev   > 0) lines.push(row(date, 'Revenue', 'Card Sales',      'Card Singles Sales',    cardRev.toFixed(2)));
-      if (sealedRev > 0) lines.push(row(date, 'Revenue', 'Sealed Products', 'Sealed Products Sales', sealedRev.toFixed(2)));
     }
 
     for (const c of filteredMiscCosts) {
@@ -646,11 +658,14 @@ function ExportPLModal({ opened, onClose, miscCosts, fixedCosts, events, monthly
       lines.push(row(date, 'Expense', c.label, 'Fixed Cost', (-(c.amountMyr || 0)).toFixed(2)));
     }
 
+    const [fyear, fmonth] = selectedMonth.split('-');
+    const fMonthName = new Date(Number(fyear), Number(fmonth) - 1, 1).toLocaleString('en', { month: 'long' });
+    const fOrgName   = (org?.name ?? 'org').replace(/[^a-zA-Z0-9]/g, '_');
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `pl_${selectedMonth}.csv`;
+    a.download = `${fOrgName}_${fMonthName}_${fyear}_pnl.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }

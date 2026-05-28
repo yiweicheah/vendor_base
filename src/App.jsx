@@ -17,6 +17,7 @@ import AcceptInvite from './pages/AcceptInvite';
 import NoAccess from './pages/NoAccess';
 import ResetPassword from './pages/ResetPassword';
 import UpdatePassword from './pages/UpdatePassword';
+import NotFound from './pages/NotFound';
 const CartPage       = lazy(() => import('./pages/Cart'));
 const HistoryPage    = lazy(() => import('./pages/History'));
 const DashboardPage  = lazy(() => import('./pages/Dashboard'));
@@ -247,14 +248,7 @@ export default function App() {
           )
         }
       />
-      <Route
-        path="/*"
-        element={
-          <AuthGuard>
-            <MainApp onSwitchOrg={handleSwitchOrg} switchingOrg={switchingOrg} />
-          </AuthGuard>
-        }
-      />
+      <Route path="*" element={<NotFound />} />
     </Routes>
     </Suspense>
   );
