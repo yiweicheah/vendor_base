@@ -6,6 +6,8 @@ import { MantineProvider, createTheme } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { ModalsProvider } from '@mantine/modals';
 import { HelmetProvider } from 'react-helmet-async';
+import { SpeedInsights } from '@vercel/speed-insights/react';
+import { Analytics } from '@vercel/analytics/react';
 import App from './App';
 
 const theme = createTheme({
@@ -27,6 +29,8 @@ createRoot(document.getElementById('root')).render(
           <App />
         </ModalsProvider>
       </MantineProvider>
+      <SpeedInsights />
+      <Analytics />
     </BrowserRouter>
   </HelmetProvider>
 );

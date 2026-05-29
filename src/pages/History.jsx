@@ -467,6 +467,7 @@ export default function History() {
                       multiline
                       w={240}
                       withArrow
+                      events={{ hover: true, focus: true, touch: true }}
                     >
                       <IconInfoCircle size={12} style={{ color: 'var(--mantine-color-dimmed)', cursor: 'default', flexShrink: 0 }} />
                     </Tooltip>
@@ -475,12 +476,10 @@ export default function History() {
                     {sign(selectedEventBreakdown.grossProfit)}{rm(selectedEventBreakdown.grossProfit)}
                   </Text>
                 </Group>
-                {selectedEventBreakdown.miscCostTotal > 0 && (
-                  <Group justify="space-between">
-                    <Text size="xs" c="dimmed">Misc costs</Text>
-                    <Text size="xs" c="dimmed">−{rm(selectedEventBreakdown.miscCostTotal)}</Text>
-                  </Group>
-                )}
+                <Group justify="space-between">
+                  <Text size="xs" c="dimmed">Misc costs</Text>
+                  <Text size="xs" c="dimmed">−{rm(selectedEventBreakdown.miscCostTotal)}</Text>
+                </Group>
                 <Divider variant="dashed" />
                 <Group justify="space-between">
                   <Group gap={4} wrap="nowrap">
@@ -490,6 +489,7 @@ export default function History() {
                       multiline
                       w={240}
                       withArrow
+                      events={{ hover: true, focus: true, touch: true }}
                     >
                       <IconInfoCircle size={12} style={{ color: 'var(--mantine-color-dimmed)', cursor: 'default', flexShrink: 0 }} />
                     </Tooltip>
