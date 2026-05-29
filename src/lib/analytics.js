@@ -367,14 +367,21 @@ export function computeMonthlyPL(transactions, miscCosts, fixedCosts, events, ym
   const closingStock = stockCostAt(ym);
 
   const txs = transactions.filter((tx) => toYM(tx.createdAt) === ym);
-  let revenue = 0, purchases = 0, txCount = 0, cardBuyQty = 0, cardSellQty = 0;
+  let revenue = 0, purchases = 0, txCount = 0, cardBuyQty = 0, cardSellQty = 0, sealedBuyQty = 0, sealedSellQty = 0;
   for (const tx of txs) {
     txCount++;
     for (const line of tx.transactionLines ?? []) {
       if (line.type !== 'card' && line.type !== 'sealed') continue;
       const value = (line.unitPriceMyr || 0) * line.qty;
-      if (line.side === 'out') { revenue   += value; if (line.type === 'card') cardSellQty += line.qty; }
-      else                     { purchases += value; if (line.type === 'card') cardBuyQty  += line.qty; }
+      if (line.side === 'out') {
+        revenue += value;
+        if (line.type === 'card')   cardSellQty   += line.qty;
+        if (line.type === 'sealed') sealedSellQty += line.qty;
+      } else {
+        purchases += value;
+        if (line.type === 'card')   cardBuyQty  += line.qty;
+        if (line.type === 'sealed') sealedBuyQty += line.qty;
+      }
     }
   }
 
@@ -395,6 +402,8 @@ export function computeMonthlyPL(transactions, miscCosts, fixedCosts, events, ym
     txCount,
     cardBuyQty,
     cardSellQty,
+    sealedBuyQty,
+    sealedSellQty,
     revenue:      +revenue.toFixed(2),
     purchases:    +purchases.toFixed(2),
     openingStock: +openingStock.toFixed(2),

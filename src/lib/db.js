@@ -153,7 +153,7 @@ export async function loadEventBreakdown(orgId) {
 /**
  * Month-by-month P&L for an org. Server-side equivalent of repeatedly calling
  * computeMonthlyPL(...) for every month in the dataset. Returns an array of
- * { month, txCount, cardBuyQty, cardSellQty, revenue, purchases,
+ * { month, txCount, cardBuyQty, cardSellQty, sealedBuyQty, sealedSellQty, revenue, purchases,
  *   openingStock, closingStock, grossProfit, miscCosts, fixedCosts, netPL }.
  */
 export async function loadMonthlyPL(orgId) {
@@ -785,10 +785,12 @@ export async function deleteFixedCost(id) {
 
 // ─── Sealed products ──────────────────────────────────────────────────────────
 
+const SEALED_COLS = 'id, name, reference_cost_myr, recommended_retail_price_myr, external_id, image_url, created_at';
+
 export async function loadSealedProducts(orgId) {
   const { data, error } = await supabase
     .from('sealed_product')
-    .select('id, name, reference_cost_myr, external_id, image_url, created_at')
+    .select(SEALED_COLS)
     .eq('org_id', orgId)
     .is('deleted_at', null)
     .order('name', { ascending: true });
@@ -796,26 +798,37 @@ export async function loadSealedProducts(orgId) {
   return toCamel(data ?? []);
 }
 
-export async function createSealedProduct({ orgId, name, referenceCostMyr, createdById }) {
+export async function createSealedProduct({ orgId, name, referenceCostMyr, recommendedRetailPriceMyr, createdById }) {
   const { data, error } = await supabase
     .from('sealed_product')
-    .insert({ org_id: orgId, name, reference_cost_myr: referenceCostMyr ?? null, created_by_id: createdById })
-    .select('id, name, reference_cost_myr, external_id, image_url, created_at')
+    .insert({
+      org_id:                       orgId,
+      name,
+      reference_cost_myr:           referenceCostMyr ?? null,
+      recommended_retail_price_myr: recommendedRetailPriceMyr ?? null,
+      created_by_id:                createdById,
+    })
+    .select(SEALED_COLS)
     .single();
   if (error) throw error;
   return toCamel(data);
 }
 
-export async function updateSealedProduct({ id, name }) {
+export async function updateSealedProduct({ id, name, recommendedRetailPriceMyr }) {
+  const patch = {};
+  if (name !== undefined) patch.name = name;
+  if (recommendedRetailPriceMyr !== undefined) patch.recommended_retail_price_myr = recommendedRetailPriceMyr;
+
   const { data, error } = await supabase
     .from('sealed_product')
-    .update({ name })
+    .update(patch)
     .eq('id', id)
-    .select('id, name, reference_cost_myr, external_id, image_url, created_at')
+    .select(SEALED_COLS)
     .single();
   if (error) throw error;
-  // Keep denormalized sealed_name in transaction_lines in sync
-  await supabase.from('transaction_lines').update({ sealed_name: name }).eq('sealed_catalog_id', id);
+  if (name !== undefined) {
+    await supabase.from('transaction_lines').update({ sealed_name: name }).eq('sealed_catalog_id', id);
+  }
   return toCamel(data);
 }
 

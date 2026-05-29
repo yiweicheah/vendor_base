@@ -23,7 +23,7 @@ const DEFAULT_METRICS = {
   grossProfit: 0, totalMiscCosts: 0, totalFixedCosts: 0, netPL: 0,
 };
 const DEFAULT_MPL = {
-  txCount: 0, cardBuyQty: 0, cardSellQty: 0,
+  txCount: 0, cardBuyQty: 0, cardSellQty: 0, sealedBuyQty: 0, sealedSellQty: 0,
   revenue: 0, purchases: 0, openingStock: 0, closingStock: 0,
   grossProfit: 0, miscCosts: 0, fixedCosts: 0, netPL: 0,
 };
@@ -932,9 +932,11 @@ const monthlyPL       = useOrgStore((s) => s.monthlyPL);
                 <Paper withBorder p="md" radius="md">
                   <Stack gap="xs">
                     {/* Metadata */}
-                    <MetaRow label="Transactions" value={mpl.txCount} />
-                    <MetaRow label="Cards bought"  value={`${mpl.cardBuyQty} pcs`} />
-                    <MetaRow label="Cards sold"    value={`${mpl.cardSellQty} pcs`} />
+                    <MetaRow label="Transactions"    value={mpl.txCount} />
+                    <MetaRow label="Cards bought"    value={`${mpl.cardBuyQty} pcs`} />
+                    <MetaRow label="Cards sold"      value={`${mpl.cardSellQty} pcs`} />
+                    <MetaRow label="Sealed bought"   value={`${mpl.sealedBuyQty ?? 0} pcs`} />
+                    <MetaRow label="Sealed sold"     value={`${mpl.sealedSellQty ?? 0} pcs`} />
 
                     <Divider variant="dashed" />
 

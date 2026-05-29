@@ -42,6 +42,7 @@ import { createSealedProduct, updateSealedProduct as updateSealedProductDb, dele
 import ImportModal from "../components/Stock/ImportModal";
 import AddStockModal from "../components/Stock/AddStockModal";
 import CardDetailModal from "../components/Cards/CardDetailModal";
+import CurrencyInput from "../components/shared/CurrencyInput";
 import { rm } from "../lib/format";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -217,6 +218,7 @@ function SealedCatalog({
   userId,
 }) {
   const [name, setName] = useState("");
+  const [rrp, setRrp] = useState(0);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("name-asc");
@@ -224,6 +226,7 @@ function SealedCatalog({
   const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
+  const [editingRrp, setEditingRrp] = useState(0);
   const [renaming, setRenaming] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -236,10 +239,12 @@ function SealedCatalog({
       const created = await createSealedProduct({
         orgId,
         name: trimmed,
+        recommendedRetailPriceMyr: rrp || null,
         createdById: userId,
       });
       addSealedProduct(created);
       setName("");
+      setRrp(0);
     } finally {
       setSaving(false);
     }
@@ -248,19 +253,25 @@ function SealedCatalog({
   function startEdit(p) {
     setEditingId(p.id);
     setEditingName(p.name);
+    setEditingRrp(p.recommendedRetailPriceMyr ?? 0);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setEditingName("");
+    setEditingRrp(0);
   }
 
-  async function handleRename(id) {
+  async function handleSave(id) {
     const trimmed = editingName.trim();
     if (!trimmed) return;
     setRenaming(true);
     try {
-      const updated = await updateSealedProductDb({ id, name: trimmed });
+      const updated = await updateSealedProductDb({
+        id,
+        name: trimmed,
+        recommendedRetailPriceMyr: editingRrp || null,
+      });
       updateSealedProduct(updated);
       cancelEdit();
     } finally {
@@ -346,6 +357,14 @@ function SealedCatalog({
           style={{ flex: 1 }}
           size="sm"
         />
+        <CurrencyInput
+          value={rrp}
+          onChange={setRrp}
+          placeholder="RRP"
+          leftSection={<Text size="xs" c="dimmed">RM</Text>}
+          size="sm"
+          w={110}
+        />
         <Button
           leftSection={<IconPlus size={13} />}
           size="sm"
@@ -424,21 +443,34 @@ function SealedCatalog({
                       <IconPackage size={13} />
                     </ThemeIcon>
                     {isEditing ? (
-                      <TextInput
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleRename(p.id);
-                          if (e.key === "Escape") cancelEdit();
-                        }}
-                        size="xs"
-                        style={{ flex: 1 }}
-                        autoFocus
-                      />
+                      <Group gap="xs" style={{ flex: 1 }} wrap="nowrap">
+                        <TextInput
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSave(p.id);
+                            if (e.key === "Escape") cancelEdit();
+                          }}
+                          size="xs"
+                          style={{ flex: 1 }}
+                          autoFocus
+                        />
+                        <CurrencyInput
+                          value={editingRrp}
+                          onChange={setEditingRrp}
+                          placeholder="RRP"
+                          leftSection={<Text size="xs" c="dimmed">RM</Text>}
+                          size="xs"
+                          w={100}
+                        />
+                      </Group>
                     ) : (
-                      <Text size="sm" fw={500} style={{ flex: 1 }}>
-                        {p.name}
-                      </Text>
+                      <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
+                        <Text size="sm" fw={500}>{p.name}</Text>
+                        {p.recommendedRetailPriceMyr != null && (
+                          <Text size="xs" c="dimmed">RRP {rm(p.recommendedRetailPriceMyr)}</Text>
+                        )}
+                      </Stack>
                     )}
                   </Group>
                   <Group gap="xs" wrap="nowrap">
@@ -449,8 +481,12 @@ function SealedCatalog({
                           color="teal"
                           variant="light"
                           loading={renaming}
-                          disabled={!editingName.trim() || editingName.trim() === p.name}
-                          onClick={() => handleRename(p.id)}
+                          disabled={
+                            !editingName.trim() ||
+                            (editingName.trim() === p.name &&
+                              (editingRrp || null) === (p.recommendedRetailPriceMyr ?? null))
+                          }
+                          onClick={() => handleSave(p.id)}
                         >
                           <IconCheck size={13} />
                         </ActionIcon>

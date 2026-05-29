@@ -24,7 +24,7 @@ export default function SealedPickerModal({ opened, onClose, side, onPick }) {
       sealedName:      product.name,
       sealedCatalogId: product.id,
       qty:             1,
-      unitPrice:       0,
+      unitPrice:       product.recommendedRetailPriceMyr ?? 0,
       avgCost:         stock?.avgCost ?? null,
     });
     onClose();
@@ -52,12 +52,17 @@ export default function SealedPickerModal({ opened, onClose, side, onPick }) {
                     style={{ cursor: 'pointer' }}
                     onClick={() => pickProduct(p)}
                   >
-                    <Group justify="space-between" wrap="nowrap">
-                      <Group gap="sm" wrap="nowrap">
+                    <Group justify="space-between" wrap="nowrap" align="flex-start">
+                      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
                         <ThemeIcon variant="light" color="teal" size="sm" radius="sm">
                           <IconPackage size={13} />
                         </ThemeIcon>
-                        <Text size="sm" fw={500}>{p.name}</Text>
+                        <Stack gap={0} style={{ minWidth: 0 }}>
+                          <Text size="sm" fw={500}>{p.name}</Text>
+                          {p.recommendedRetailPriceMyr != null && (
+                            <Text size="xs" c="dimmed">RRP {rm(p.recommendedRetailPriceMyr)}</Text>
+                          )}
+                        </Stack>
                       </Group>
                       {side === 'out' && stock && (
                         <Text size="xs" c="dimmed">avg cost {rm(stock.avgCost)}</Text>

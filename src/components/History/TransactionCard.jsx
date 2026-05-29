@@ -98,33 +98,41 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
 
       {editing ? (
         <Group gap={4} align="center" style={{ flexShrink: 0 }}>
-          <TextInput
-            size="xs"
-            value={rawPrice}
-            onChange={(e) => {
-              const val = e.currentTarget.value;
-              setLineEdits((prev) => ({ ...prev, [line.id]: val }));
-            }}
-            leftSection={<Text size="xs" c="dimmed">RM</Text>}
-            leftSectionWidth={32}
-            w={90}
-            styles={{ input: { textAlign: 'right' } }}
-          />
-          <Text size="xs" c="dimmed">×</Text>
-          <NumberInput
-            size="xs"
-            value={qty}
-            onChange={(val) => {
-              if (typeof val === 'number' && val >= 1) {
-                setQtyEdits((prev) => ({ ...prev, [line.id]: val }));
-              }
-            }}
-            min={1}
-            allowDecimal={false}
-            hideControls
-            w={44}
-            styles={{ input: { textAlign: 'center' } }}
-          />
+          {line.type === 'cash' ? (
+            <Text size="sm" fw={500} c="dimmed" style={{ minWidth: 90, textAlign: 'right' }}>
+              {rm(unitPrice)}
+            </Text>
+          ) : (
+            <>
+              <TextInput
+                size="xs"
+                value={rawPrice}
+                onChange={(e) => {
+                  const val = e.currentTarget.value;
+                  setLineEdits((prev) => ({ ...prev, [line.id]: val }));
+                }}
+                leftSection={<Text size="xs" c="dimmed">RM</Text>}
+                leftSectionWidth={32}
+                w={90}
+                styles={{ input: { textAlign: 'right' } }}
+              />
+              <Text size="xs" c="dimmed">×</Text>
+              <NumberInput
+                size="xs"
+                value={qty}
+                onChange={(val) => {
+                  if (typeof val === 'number' && val >= 1) {
+                    setQtyEdits((prev) => ({ ...prev, [line.id]: val }));
+                  }
+                }}
+                min={1}
+                allowDecimal={false}
+                hideControls
+                w={44}
+                styles={{ input: { textAlign: 'center' } }}
+              />
+            </>
+          )}
           <ActionIcon
             size="xs" variant="subtle" color="red"
             loading={deletingLine === line.id}
@@ -242,6 +250,37 @@ export default function TransactionCard({ tx, view = 'list' }) {
   // Expanded-view in/out splits — only meaningful once lines have been lazy-loaded.
   const inLines  = sortLines(lines.filter((l) => l.side === 'in'));
   const outLines = sortLines(lines.filter((l) => l.side === 'out'));
+
+  // Mirror Cart.jsx auto-balance: keep total IN == total OUT by adjusting the cash line.
+  // Must be placed after inLines/outLines are declared — deps array is evaluated at call-time.
+  useEffect(() => {
+    if (!editing || lines.length === 0) return;
+    const inCash  = inLines.find((l) => l.type === 'cash');
+    const outCash = outLines.find((l) => l.type === 'cash');
+    if (!inCash && !outCash) return;
+
+    function nonCashTotal(lineList) {
+      return lineList
+        .filter((l) => l.type !== 'cash')
+        .reduce((s, l) => {
+          const price = l.id in lineEdits ? (parseFloat(lineEdits[l.id]) || 0) : (l.unitPriceMyr || 0);
+          const qty   = l.id in qtyEdits  ? qtyEdits[l.id] : l.qty;
+          return s + price * qty;
+        }, 0);
+    }
+
+    const diff = nonCashTotal(inLines) - nonCashTotal(outLines);
+    const targetOut = diff > 0.005  ? diff.toFixed(2)    : '0';
+    const targetIn  = diff < -0.005 ? (-diff).toFixed(2) : '0';
+
+    if (outCash && lineEdits[outCash.id] !== targetOut)
+      setLineEdits((prev) => ({ ...prev, [outCash.id]: targetOut }));
+    if (inCash  && lineEdits[inCash.id]  !== targetIn)
+      setLineEdits((prev) => ({ ...prev, [inCash.id]:  targetIn  }));
+  // lineEdits is in deps and written here — safe: writes target cash keys only,
+  // reads target non-cash keys only, so the effect converges in one extra run.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, inLines, outLines, lineEdits, qtyEdits]);
 
   // Collapsed-row aggregates come from the slim RPC's precomputed scalars
   // (see get_org_transactions_page_slim.sql). No derivation from `lines` —
@@ -688,18 +727,22 @@ export default function TransactionCard({ tx, view = 'list' }) {
             <Badge color={TYPE_COLOR[type]} variant="light" size="sm" style={{ flexShrink: 0 }}>
               {type}
             </Badge>
-            <Text size="sm" fw={600} truncate>{rm(displayTotal)}</Text>
-            {tx.event && (
-              <Badge color="orange" variant="dot" size="sm" style={{ flexShrink: 0 }}>
-                {tx.event.name}
-              </Badge>
-            )}
-            {tx.paymentMethod && (
-              <Badge color="cyan" variant="light" size="sm" style={{ flexShrink: 0 }}>
-                {tx.paymentMethod}
-              </Badge>
-            )}
+            <Text size="sm" fw={600} style={{ flexShrink: 0 }}>{rm(displayTotal)}</Text>
           </Group>
+          {(tx.event || tx.paymentMethod) && (
+            <Group gap="xs" wrap="wrap">
+              {tx.event && (
+                <Badge color="orange" variant="dot" size="sm" style={{ flexShrink: 0 }}>
+                  {tx.event.name}
+                </Badge>
+              )}
+              {tx.paymentMethod && (
+                <Badge color="cyan" variant="light" size="sm" style={{ flexShrink: 0 }}>
+                  {tx.paymentMethod}
+                </Badge>
+              )}
+            </Group>
+          )}
           <Text size="xs" c="dimmed" truncate>
             {summaryParts.join(' · ')}{creator ? ` · ${creator}` : ''}
           </Text>

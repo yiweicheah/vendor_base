@@ -8,11 +8,13 @@
 
 CREATE OR REPLACE FUNCTION public.get_org_monthly_pl(p_org_id uuid)
 RETURNS TABLE (
-  month          text,
-  tx_count       integer,
-  card_buy_qty   integer,
-  card_sell_qty  integer,
-  revenue        numeric,
+  month            text,
+  tx_count         integer,
+  card_buy_qty     integer,
+  card_sell_qty    integer,
+  sealed_buy_qty   integer,
+  sealed_sell_qty  integer,
+  revenue          numeric,
   purchases      numeric,
   opening_stock  numeric,
   closing_stock  numeric,
@@ -139,8 +141,11 @@ tx_per_month AS (
                        THEN COALESCE(tl.unit_price_myr, 0) * tl.qty END), 0)::numeric AS revenue,
     COALESCE(SUM(CASE WHEN tl.type IN ('card','sealed') AND tl.side='in'
                        THEN COALESCE(tl.unit_price_myr, 0) * tl.qty END), 0)::numeric AS purchases,
-    COALESCE(SUM(CASE WHEN tl.type='card' AND tl.side='in'  THEN tl.qty END), 0)::integer AS card_buy_qty,
-    COALESCE(SUM(CASE WHEN tl.type='card' AND tl.side='out' THEN tl.qty END), 0)::integer AS card_sell_qty
+    COALESCE(SUM(CASE WHEN tl.type='card'   AND tl.side='in'  THEN tl.qty END), 0)::integer AS card_buy_qty,
+    COALESCE(SUM(CASE WHEN tl.type='card'   AND tl.side='out' THEN tl.qty END), 0)::integer AS card_sell_qty,
+    COALESCE(SUM(CASE WHEN tl.type='card'   AND tl.card_external_id IS NULL AND tl.side='out' THEN tl.qty END), 0)::integer AS bulk_sell_qty,
+    COALESCE(SUM(CASE WHEN tl.type='sealed' AND tl.side='in'  THEN tl.qty END), 0)::integer AS sealed_buy_qty,
+    COALESCE(SUM(CASE WHEN tl.type='sealed' AND tl.side='out' THEN tl.qty END), 0)::integer AS sealed_sell_qty
   FROM public.transaction t
   LEFT JOIN public.transaction_lines tl ON tl.transaction_id = t.id
   WHERE t.org_id = p_org_id AND t.deleted_at IS NULL
@@ -177,9 +182,11 @@ months_with_prev AS (
 )
 SELECT
   m.ym                                                                            AS month,
-  COALESCE(tpm.tx_count,      0)                                                  AS tx_count,
-  COALESCE(tpm.card_buy_qty,  0)                                                  AS card_buy_qty,
-  COALESCE(tpm.card_sell_qty, 0)                                                  AS card_sell_qty,
+  COALESCE(tpm.tx_count,        0)                                                AS tx_count,
+  COALESCE(tpm.card_buy_qty,   0)                                                AS card_buy_qty,
+  COALESCE(tpm.card_sell_qty,  0)                                                AS card_sell_qty,
+  COALESCE(tpm.sealed_buy_qty, 0)                                                AS sealed_buy_qty,
+  COALESCE(tpm.sealed_sell_qty,0)                                                AS sealed_sell_qty,
   ROUND(COALESCE(tpm.revenue,        0), 2)                                       AS revenue,
   ROUND(COALESCE(tpm.purchases,      0), 2)                                       AS purchases,
   ROUND(COALESCE(prev_spm.stock_cost, 0), 2)                                      AS opening_stock,
