@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { Center, Loader } from '@mantine/core';
+import { Center, Loader, Stack, Text } from '@mantine/core';
 import { supabase } from './lib/supabase';
 import useAuthStore from './store/authStore';
 import useOrgStore from './store/orgStore';
 import useCartStore from './store/cartStore';
 import { resolveUser, loadAllMemberships, loadEvents, loadFunds, loadPaymentMethods, loadEventMiscCosts, loadFixedCosts, loadSealedProducts, loadMetrics, loadEventBreakdown, loadMonthlyPL, loadStock } from './lib/db';
+import { readOrgCache, writeOrgCache } from './lib/orgCache';
 import { fetchExchangeRates } from './lib/exchangeRates';
 import { isSuperuserUid } from './lib/superuser';
 import AuthGuard from './components/AuthGuard';
@@ -25,6 +26,98 @@ const OrgPage        = lazy(() => import('./pages/Org'));
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 const StockPage      = lazy(() => import('./pages/Stock'));
 const UserPage       = lazy(() => import('./pages/User'));
+
+// Seed the heavy aggregate fields (metrics / eventBreakdown / monthlyPL / stock)
+// from localStorage so Dashboard / Stock can render immediately on boot or
+// org switch, before the fresh RPCs land. Safe to call with no cached data —
+// the store fields stay at their cleared defaults.
+function hydrateOrgFromCache(orgId, { setMetrics, setEventBreakdown, setMonthlyPL, setStock }) {
+  const cached = readOrgCache(orgId);
+  if (!cached) return;
+  if (cached.metrics)        setMetrics(cached.metrics);
+  if (cached.eventBreakdown) setEventBreakdown(cached.eventBreakdown);
+  if (cached.monthlyPL)      setMonthlyPL(cached.monthlyPL);
+  if (cached.stock)          setStock(cached.stock);
+}
+
+async function loadCriticalOrgData(orgId, {
+  setEvents, setFunds, setPaymentMethods, setMiscCosts, setFixedCosts, setSealedProducts,
+}) {
+  const [events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts] = await Promise.all([
+    loadEvents(orgId),
+    loadFunds(orgId),
+    loadPaymentMethods(orgId),
+    loadEventMiscCosts(orgId),
+    loadFixedCosts(orgId),
+    loadSealedProducts(orgId),
+  ]);
+  setEvents(events);
+  setFunds(funds);
+  setPaymentMethods(paymentMethods);
+  setMiscCosts(miscCosts);
+  setFixedCosts(fixedCosts);
+  setSealedProducts(sealedProducts);
+  return { events };
+}
+
+function loadHeavyAggregates(orgId, { setMetrics, setEventBreakdown, setMonthlyPL, setStock }) {
+  loadMetrics(orgId).then((metrics) => {
+    setMetrics(metrics);
+    writeOrgCache(orgId, { metrics });
+  }).catch((err) => console.error('loadMetrics:', err));
+  loadEventBreakdown(orgId).then((eventBreakdown) => {
+    setEventBreakdown(eventBreakdown);
+    writeOrgCache(orgId, { eventBreakdown });
+  }).catch((err) => console.error('loadEventBreakdown:', err));
+  loadMonthlyPL(orgId).then((monthlyPL) => {
+    setMonthlyPL(monthlyPL);
+    writeOrgCache(orgId, { monthlyPL });
+  }).catch((err) => console.error('loadMonthlyPL:', err));
+  loadStock(orgId).then((stock) => {
+    setStock(stock);
+    writeOrgCache(orgId, { stock });
+  }).catch((err) => console.error('loadStock:', err));
+}
+
+async function loadOrgData(orgId, deps) {
+  deps.setLoading(true);
+  try {
+    const { events } = await loadCriticalOrgData(orgId, deps);
+    const savedEventId = localStorage.getItem('selectedEventId');
+    if (savedEventId && events.some((e) => e.id === savedEventId)) {
+      deps.setActiveEventId(savedEventId);
+    }
+  } catch (err) {
+    console.error('loadCriticalOrgData:', err);
+  } finally {
+    deps.setLoading(false);
+  }
+  loadHeavyAggregates(orgId, deps);
+}
+
+// First paint while session + user resolve. Supabase free-tier projects can
+// take 30-120s on a cold start; show an explanation after a few seconds so
+// the spinner isn't silently hanging.
+function BootSpinner() {
+  const [phase, setPhase] = useState(0); // 0=quiet, 1=waking, 2=still waking
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase(1), 3000);
+    const t2 = setTimeout(() => setPhase(2), 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+  return (
+    <Center h="100dvh">
+      <Stack align="center" gap="sm">
+        <Loader color="violet" size="md" />
+        {phase >= 1 && (
+          <Text size="sm" c="dimmed">
+            {phase >= 2 ? 'Waking up the database (this can take up to a minute)…' : 'Waking up the database…'}
+          </Text>
+        )}
+      </Stack>
+    </Center>
+  );
+}
 
 function MainApp({ onSwitchOrg, switchingOrg }) {
   const [view, setView] = useState('cart');
@@ -116,35 +209,13 @@ export default function App() {
         });
 
         if (initialMembership) {
-          setLoading(true);
-          Promise.all([
-            loadEvents(initialMembership.org.id),
-            loadFunds(initialMembership.org.id),
-            loadPaymentMethods(initialMembership.org.id),
-            loadEventMiscCosts(initialMembership.org.id),
-            loadFixedCosts(initialMembership.org.id),
-            loadSealedProducts(initialMembership.org.id),
-            loadMetrics(initialMembership.org.id),
-            loadEventBreakdown(initialMembership.org.id),
-            loadMonthlyPL(initialMembership.org.id),
-            loadStock(initialMembership.org.id),
-          ]).then(([events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock]) => {
-            setEvents(events);
-            setFunds(funds);
-            setPaymentMethods(paymentMethods);
-            setMiscCosts(miscCosts);
-            setFixedCosts(fixedCosts);
-            setSealedProducts(sealedProducts);
-            setMetrics(metrics);
-            setEventBreakdown(eventBreakdown);
-            setMonthlyPL(monthlyPL);
-            setStock(stock);
-            const savedEventId = localStorage.getItem('selectedEventId');
-            if (savedEventId && events.some((e) => e.id === savedEventId)) {
-              setActiveEventId(savedEventId);
-            }
-          }).finally(() => {
-            setLoading(false);
+          hydrateOrgFromCache(initialMembership.org.id, {
+            setMetrics, setEventBreakdown, setMonthlyPL, setStock,
+          });
+          loadOrgData(initialMembership.org.id, {
+            setEvents, setFunds, setPaymentMethods, setMiscCosts, setFixedCosts, setSealedProducts,
+            setMetrics, setEventBreakdown, setMonthlyPL, setStock,
+            setActiveEventId, setLoading,
           });
         }
       } catch (err) {
@@ -182,40 +253,19 @@ export default function App() {
     clearOrgData();
     clearCart();
     setSwitchingOrg(true);
+    hydrateOrgFromCache(orgId, { setMetrics, setEventBreakdown, setMonthlyPL, setStock });
     try {
-      const [events, funds, paymentMethods, miscCosts, fixedCosts, sealedProducts, metrics, eventBreakdown, monthlyPL, stock] = await Promise.all([
-        loadEvents(orgId),
-        loadFunds(orgId),
-        loadPaymentMethods(orgId),
-        loadEventMiscCosts(orgId),
-        loadFixedCosts(orgId),
-        loadSealedProducts(orgId),
-        loadMetrics(orgId),
-        loadEventBreakdown(orgId),
-        loadMonthlyPL(orgId),
-        loadStock(orgId),
-      ]);
-      setEvents(events);
-      setFunds(funds);
-      setPaymentMethods(paymentMethods);
-      setMiscCosts(miscCosts);
-      setFixedCosts(fixedCosts);
-      setSealedProducts(sealedProducts);
-      setMetrics(metrics);
-      setEventBreakdown(eventBreakdown);
-      setMonthlyPL(monthlyPL);
-      setStock(stock);
+      await loadCriticalOrgData(orgId, {
+        setEvents, setFunds, setPaymentMethods, setMiscCosts, setFixedCosts, setSealedProducts,
+      });
     } finally {
       setSwitchingOrg(false);
     }
+    loadHeavyAggregates(orgId, { setMetrics, setEventBreakdown, setMonthlyPL, setStock });
   }
 
   if (authLoading) {
-    return (
-      <Center h="100dvh">
-        <Loader color="violet" size="md" />
-      </Center>
-    );
+    return <BootSpinner />;
   }
 
   const fallback = <Center h="100dvh"><Loader color="violet" size="md" /></Center>;
