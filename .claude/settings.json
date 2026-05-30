@@ -19,7 +19,13 @@
       "Bash(xargs ls)",
       "Bash(awk 'BEGIN{p=0} /^\\\\/.*Dashboard\\\\.jsx$/{p=1; print; next} p && /^\\\\/.*\\\\.jsx?$/{p=0} p && /react-hooks\\\\/set-state-in-effect/{print}' /tmp/lint_after_1b.txt)",
       "Bash(xargs ls -la)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(find /Users/cyw -name \"memory.md\" -o -name \"memory.txt\" 2>/dev/null | head -5)",
+      "Read(//Users/cyw/**)",
+      "WebFetch(domain:tcgcsv.com)"
+    ],
+    "additionalDirectories": [
+      "/Users/cyw/Developer/Web/vendor_base_api"
     ]
   }
 }

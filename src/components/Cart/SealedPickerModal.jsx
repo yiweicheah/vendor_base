@@ -20,12 +20,13 @@ export default function SealedPickerModal({ opened, onClose, side, onPick }) {
     const found = sealedStockMap.get(product.name.toLowerCase());
     const stock = found?.type === 'sealed' ? found : null;
     addLine(side, {
-      type:            'sealed',
-      sealedName:      product.name,
-      sealedCatalogId: product.id,
-      qty:             1,
-      unitPrice:       product.recommendedRetailPriceMyr ?? 0,
-      avgCost:         stock?.avgCost ?? null,
+      type:                 'sealed',
+      sealedName:           product.name,
+      sealedCatalogId:      product.id,
+      qty:                  1,
+      unitPrice:            product.recommendedRetailPriceMyr ?? 0,
+      avgCost:              stock?.avgCost ?? null,
+      sealedReferencePrice: stock?.avgCost ?? null,
     });
     onClose();
   }
