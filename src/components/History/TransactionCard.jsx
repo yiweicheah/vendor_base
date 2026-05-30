@@ -70,13 +70,13 @@ function LineRow({ line, editing, lineEdits, setLineEdits, qtyEdits, setQtyEdits
         <Stack gap={1} style={{ minWidth: 0 }}>
           <Text size="sm" fw={500} truncate>{label ?? '—'}</Text>
           {sub && <Text size="xs" c="dimmed" truncate>{sub}</Text>}
-          {line.side === 'out' && line.type === 'card' && line.avgCostMyr != null && !editing && (() => {
-            const pct = line.avgCostMyr > 0
-              ? ((unitPrice - line.avgCostMyr) / line.avgCostMyr) * 100
-              : null;
+          {line.side === 'out' && !editing && (() => {
+            const costBasis = isCard ? line.avgCostMyr : isSealed ? line.sealedReferencePrice : null;
+            if (costBasis == null) return null;
+            const pct = costBasis > 0 ? ((unitPrice - costBasis) / costBasis) * 100 : null;
             return (
               <Text size="xs" c={pct == null ? 'dimmed' : pct >= 0 ? 'teal.4' : 'red.4'}>
-                Avg {rm(line.avgCostMyr)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
+                Cost {rm(costBasis)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
               </Text>
             );
           })()}
@@ -409,14 +409,20 @@ export default function TransactionCard({ tx, view = 'list' }) {
         // If any edited import line was a tracked card, replay its cost basis
         // so downstream sales' avg_cost_myr (and gross profit) stay in sync.
         const affectedCards = new Set();
+        let sealedTouched = false;
         for (const patch of linePatches) {
           const line = lines.find((l) => l.id === patch.lineId);
           if (line?.side === 'in' && line?.type === 'card' && line?.cardExternalId) {
             affectedCards.add(line.cardExternalId);
+          } else if (line?.side === 'in' && line?.type === 'sealed' && line?.sealedCatalogId) {
+            sealedTouched = true;
           }
         }
         for (const cardExternalId of affectedCards) {
           await recalculateAvgCosts(org.id, cardExternalId);
+        }
+        if (sealedTouched && affectedCards.size === 0) {
+          await recalculateAvgCosts(org.id, null);
         }
       }
       if (isImport && loadedLines !== null) {
@@ -913,13 +919,17 @@ export default function TransactionCard({ tx, view = 'list' }) {
                                   </Text>
                                 );
                               })()}
-                              {l.side === 'out' && l.avgCostMyr != null && (() => {
-                                const pct = l.avgCostMyr > 0
-                                  ? ((l.unitPriceMyr ?? 0) - l.avgCostMyr) / l.avgCostMyr * 100
+                              {l.side === 'out' && (() => {
+                                const costBasis = l.type === 'card'
+                                  ? l.avgCostMyr
+                                  : l.type === 'sealed' ? l.sealedReferencePrice : null;
+                                if (costBasis == null) return null;
+                                const pct = costBasis > 0
+                                  ? ((l.unitPriceMyr ?? 0) - costBasis) / costBasis * 100
                                   : null;
                                 return (
                                   <Text size="xs" c={pct == null ? 'dimmed' : pct >= 0 ? 'teal.4' : 'red.4'}>
-                                    Avg {rm(l.avgCostMyr)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
+                                    Cost {rm(costBasis)}{pct != null ? ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%` : ''}
                                   </Text>
                                 );
                               })()}

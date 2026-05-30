@@ -13,12 +13,12 @@ import {
   ThemeIcon,
   Button,
   ActionIcon,
-  Pagination,
   Tabs,
   Paper,
   Tooltip,
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   IconSearch,
   IconPackage,
@@ -28,10 +28,13 @@ import {
   IconLayoutGrid,
   IconRefresh,
   IconPlus,
+  IconMinus,
   IconPencil,
   IconCheck,
+  IconChecks,
   IconX,
   IconTrash,
+  IconFolderPlus,
 } from "@tabler/icons-react";
 import { buildStockMapFromRows } from "../lib/analytics";
 import { normalizeStr } from "../lib/tokenizer";
@@ -63,67 +66,122 @@ function GainText({ value, costBasis }) {
   );
 }
 
-function StockRow({ item }) {
+function StockRow({
+  item,
+  selectionMode = false,
+  selected = false,
+  selectionCount = 0,
+  onToggle,
+  onCountChange,
+}) {
   const isCard = item.type === "card";
+  const clickable = selectionMode && isCard;
 
   return (
-    <Group justify="space-between" wrap="nowrap" gap="sm">
-      <Box style={{ flexShrink: 0 }}>
-        {isCard && item.imageUrl ? (
-          <Image src={item.imageUrl} w={28} h={39} radius="sm" fit="contain" />
-        ) : (
-          <Box
-            w={28}
-            h={39}
-            bg="dark.6"
-            style={{
-              borderRadius: 4,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {!isCard && (
-              <IconPackage size={14} color="var(--mantine-color-dark-2)" />
-            )}
-          </Box>
-        )}
-      </Box>
+    <Box
+      onClick={clickable ? () => onToggle(item) : undefined}
+      style={{
+        cursor: clickable ? "pointer" : undefined,
+        borderLeft: selected
+          ? "3px solid var(--mantine-color-green-5)"
+          : selectionMode && isCard
+            ? "3px solid var(--mantine-color-red-7)"
+            : "3px solid transparent",
+        paddingLeft: 6,
+        paddingTop: 4,
+        paddingBottom: 4,
+        borderRadius: 4,
+      }}
+    >
+      <Group justify="space-between" wrap="nowrap" gap="sm">
+        <Box style={{ flexShrink: 0 }}>
+          {isCard && item.imageUrl ? (
+            <Image src={item.imageUrl} w={28} h={39} radius="sm" fit="contain" />
+          ) : (
+            <Box
+              w={28}
+              h={39}
+              bg="dark.6"
+              style={{
+                borderRadius: 4,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {!isCard && (
+                <IconPackage size={14} color="var(--mantine-color-dark-2)" />
+              )}
+            </Box>
+          )}
+        </Box>
 
-      <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-        <Group gap="xs" wrap="nowrap">
-          <Text size="sm" fw={500} truncate>
-            {item.name}
-          </Text>
-        </Group>
-        {isCard && (
-          <Text size="xs" c="dimmed" truncate>
-            {[item.setName, item.number, item.lang].filter(Boolean).join(" · ")}
-          </Text>
-        )}
-        <Text size="xs" c="dimmed">
-          Avg cost {rm(item.avgCost)}
-        </Text>
-      </Stack>
-
-      <Stack gap={2} align="flex-end" style={{ flexShrink: 0 }}>
-        <Badge color="violet" variant="light" size="sm">
-          ×{item.qty}
-        </Badge>
-        {isCard && item.marketValue > 0 && (
+        <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+          <Group gap="xs" wrap="nowrap">
+            <Text size="sm" fw={500} truncate>
+              {item.name}
+            </Text>
+          </Group>
+          {isCard && (
+            <Text size="xs" c="dimmed" truncate>
+              {[item.setName, item.number, item.lang].filter(Boolean).join(" · ")}
+            </Text>
+          )}
           <Text size="xs" c="dimmed">
-            {rm(item.marketValue)}
+            Avg cost {rm(item.avgCost)}
           </Text>
-        )}
-        {isCard && (
-          <GainText value={item.unrealizedGain} costBasis={item.costBasis} />
-        )}
-      </Stack>
-    </Group>
+        </Stack>
+
+        <Stack gap={2} align="flex-end" style={{ flexShrink: 0 }}>
+          <Badge color="violet" variant="light" size="sm">
+            ×{item.qty}
+          </Badge>
+          {isCard && item.marketValue > 0 && (
+            <Text size="xs" c="dimmed">
+              {rm(item.marketValue)}
+            </Text>
+          )}
+          {isCard && (
+            <GainText value={item.unrealizedGain} costBasis={item.costBasis} />
+          )}
+          {selected && item.qty > 1 && (
+            <Group gap={4} wrap="nowrap" onClick={(e) => e.stopPropagation()}>
+              <ActionIcon
+                size="xs"
+                variant="default"
+                disabled={selectionCount <= 1}
+                onClick={() => onCountChange(item.key, selectionCount - 1)}
+              >
+                <IconMinus size={11} />
+              </ActionIcon>
+              <Text size="xs" w={32} ta="center">
+                {selectionCount}/{item.qty}
+              </Text>
+              <ActionIcon
+                size="xs"
+                variant="default"
+                disabled={selectionCount >= item.qty}
+                onClick={() => onCountChange(item.key, selectionCount + 1)}
+              >
+                <IconPlus size={11} />
+              </ActionIcon>
+            </Group>
+          )}
+        </Stack>
+      </Group>
+    </Box>
   );
 }
 
-function StockGridItem({ item, onCardClick }) {
+function StockGridItem({
+  item,
+  onCardClick,
+  selectionMode = false,
+  selected = false,
+  selectionCount = 0,
+  onToggle,
+  onCountChange,
+}) {
   const isCard = item.type === "card";
   return (
     <Stack gap={6}>
@@ -132,9 +190,20 @@ function StockGridItem({ item, onCardClick }) {
           width: "100%",
           position: "relative",
           cursor: isCard ? "pointer" : "default",
+          outline: selected
+            ? "3px solid var(--mantine-color-green-5)"
+            : selectionMode && isCard
+              ? "3px solid var(--mantine-color-red-7)"
+              : undefined,
+          borderRadius: "4.4%",
         }}
         onClick={
-          isCard ? () => onCardClick(item.key, item.imageUrl) : undefined
+          isCard
+            ? () =>
+                selectionMode
+                  ? onToggle(item)
+                  : onCardClick(item.key, item.imageUrl)
+            : undefined
         }
       >
         {isCard && item.imageUrl ? (
@@ -170,6 +239,41 @@ function StockGridItem({ item, onCardClick }) {
         >
           ×{item.qty}
         </Badge>
+        {selected && item.qty > 1 && (
+          <Group
+            gap={4}
+            wrap="nowrap"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              bottom: 4,
+              left: 4,
+              background: "var(--mantine-color-dark-8)",
+              borderRadius: 4,
+              padding: 2,
+            }}
+          >
+            <ActionIcon
+              size="xs"
+              variant="default"
+              disabled={selectionCount <= 1}
+              onClick={() => onCountChange(item.key, selectionCount - 1)}
+            >
+              <IconMinus size={11} />
+            </ActionIcon>
+            <Text size="xs" w={32} ta="center" c="white">
+              {selectionCount}/{item.qty}
+            </Text>
+            <ActionIcon
+              size="xs"
+              variant="default"
+              disabled={selectionCount >= item.qty}
+              onClick={() => onCountChange(item.key, selectionCount + 1)}
+            >
+              <IconPlus size={11} />
+            </ActionIcon>
+          </Group>
+        )}
       </Box>
       <Stack gap={2}>
         <Text size="xs" fw={500} lineClamp={2}>
@@ -193,8 +297,6 @@ function StockGridItem({ item, onCardClick }) {
 
 // ─── Sealed catalog tab ───────────────────────────────────────────────────────
 
-const SEALED_PAGE_SIZE = 20;
-
 const SEALED_SORT_OPTIONS = [
   { value: "name-asc", label: "Name (A–Z)" },
   { value: "name-desc", label: "Name (Z–A)" },
@@ -216,14 +318,15 @@ function SealedCatalog({
   sealedStockMap,
   orgId,
   userId,
+  viewportRef,
 }) {
   const [name, setName] = useState("");
   const [rrp, setRrp] = useState(0);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
+  const [debouncedQuery] = useDebouncedValue(query, 250);
   const [sort, setSort] = useState("name-asc");
   const [stockFilter, setStockFilter] = useState("all");
-  const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
   const [editingRrp, setEditingRrp] = useState(0);
@@ -291,7 +394,7 @@ function SealedCatalog({
   }
 
   const filtered = useMemo(() => {
-    const q = normalizeStr(query.trim().toLowerCase());
+    const q = normalizeStr(debouncedQuery.trim().toLowerCase());
     let list = sealedProducts;
 
     if (q) {
@@ -332,17 +435,20 @@ function SealedCatalog({
         break;
     }
     return sorted;
-  }, [sealedProducts, query, sort, stockFilter, sealedStockMap]);
+  }, [sealedProducts, debouncedQuery, sort, stockFilter, sealedStockMap]);
 
   useEffect(() => {
-    setPage(1);
-  }, [filtered]);
+    viewportRef?.current?.scrollTo({ top: 0 });
+  }, [debouncedQuery, sort, stockFilter, viewportRef]);
 
-  const totalPages = Math.ceil(filtered.length / SEALED_PAGE_SIZE);
-  const paged = filtered.slice(
-    (page - 1) * SEALED_PAGE_SIZE,
-    page * SEALED_PAGE_SIZE,
-  );
+  const listWrapperRef = useRef(null);
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => viewportRef?.current ?? null,
+    estimateSize: () => 64,
+    overscan: 8,
+    scrollMargin: listWrapperRef.current?.offsetTop ?? 0,
+  });
 
   return (
     <Stack gap="md">
@@ -431,144 +537,153 @@ function SealedCatalog({
           No matches.
         </Text>
       ) : (
-        <Stack gap="xs">
-          {paged.map((p) => {
+        <div
+          ref={listWrapperRef}
+          style={{
+            height: virtualizer.getTotalSize(),
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((vItem) => {
+            const p = filtered[vItem.index];
             const stock = sealedStockMap.get(p.name.toLowerCase());
             const isEditing = editingId === p.id;
             return (
-              <Paper key={p.id} withBorder p="sm" radius="md">
-                <Group justify="space-between" wrap="nowrap" align="flex-start">
-                  <Group gap="sm" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-                    <ThemeIcon variant="light" color="teal" size="sm" radius="sm" style={{ flexShrink: 0 }}>
-                      <IconPackage size={13} />
-                    </ThemeIcon>
-                    {isEditing ? (
-                      <Group gap="xs" style={{ flex: 1 }} wrap="nowrap">
-                        <TextInput
-                          value={editingName}
-                          onChange={(e) => setEditingName(e.currentTarget.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSave(p.id);
-                            if (e.key === "Escape") cancelEdit();
-                          }}
-                          size="xs"
-                          style={{ flex: 1 }}
-                          autoFocus
-                        />
-                        <CurrencyInput
-                          value={editingRrp}
-                          onChange={setEditingRrp}
-                          placeholder="RRP"
-                          leftSection={<Text size="xs" c="dimmed">RM</Text>}
-                          size="xs"
-                          w={100}
-                        />
-                      </Group>
-                    ) : (
-                      <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
-                        <Text size="sm" fw={500}>{p.name}</Text>
-                        {p.recommendedRetailPriceMyr != null && (
-                          <Text size="xs" c="dimmed">RRP {rm(p.recommendedRetailPriceMyr)}</Text>
-                        )}
-                      </Stack>
-                    )}
-                  </Group>
-                  <Group gap="xs" wrap="nowrap">
-                    {isEditing ? (
-                      <>
-                        <ActionIcon
-                          size="sm"
-                          color="teal"
-                          variant="light"
-                          loading={renaming}
-                          disabled={
-                            !editingName.trim() ||
-                            (editingName.trim() === p.name &&
-                              (editingRrp || null) === (p.recommendedRetailPriceMyr ?? null))
-                          }
-                          onClick={() => handleSave(p.id)}
-                        >
-                          <IconCheck size={13} />
-                        </ActionIcon>
-                        <ActionIcon size="sm" variant="subtle" color="gray" onClick={cancelEdit}>
-                          <IconX size={13} />
-                        </ActionIcon>
-                      </>
-                    ) : pendingDeleteId === p.id ? (
-                      <>
-                        <Text size="xs" c="dimmed">Delete?</Text>
-                        <Button
-                          size="xs"
-                          color="red"
-                          variant="light"
-                          loading={deleting}
-                          onClick={() => confirmDelete(p.id)}
-                        >
-                          Yes, delete
-                        </Button>
-                        <ActionIcon size="sm" variant="subtle" color="gray" onClick={() => setPendingDeleteId(null)}>
-                          <IconX size={13} />
-                        </ActionIcon>
-                      </>
-                    ) : (
-                      <>
-                        {stock && stock.qty > 0 ? (
-                          <Stack gap={1} align="flex-end" style={{ flexShrink: 0 }}>
-                            <Badge color="violet" variant="light" size="sm">
-                              ×{stock.qty}
-                            </Badge>
-                            <Text size="xs" c="dimmed">
-                              avg {rm(stock.avgCost)}
-                            </Text>
-                          </Stack>
-                        ) : (
-                          <Text size="xs" c="dimmed">0 in stock</Text>
-                        )}
-                        <ActionIcon size="sm" variant="subtle" color="gray" onClick={() => startEdit(p)}>
-                          <IconPencil size={13} />
-                        </ActionIcon>
-                        <Tooltip
-                          label="Sell or remove all stock before deleting"
-                          disabled={!stock || stock.qty === 0}
-                          withArrow
-                        >
+              <div
+                key={p.id}
+                data-index={vItem.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${vItem.start - virtualizer.options.scrollMargin}px)`,
+                  paddingBottom: "var(--mantine-spacing-xs)",
+                }}
+              >
+                <Paper withBorder p="sm" radius="md">
+                  <Group justify="space-between" wrap="nowrap" align="flex-start">
+                    <Group gap="sm" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+                      <ThemeIcon variant="light" color="teal" size="sm" radius="sm" style={{ flexShrink: 0 }}>
+                        <IconPackage size={13} />
+                      </ThemeIcon>
+                      {isEditing ? (
+                        <Group gap="xs" style={{ flex: 1 }} wrap="nowrap">
+                          <TextInput
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.currentTarget.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSave(p.id);
+                              if (e.key === "Escape") cancelEdit();
+                            }}
+                            size="xs"
+                            style={{ flex: 1 }}
+                            autoFocus
+                          />
+                          <CurrencyInput
+                            value={editingRrp}
+                            onChange={setEditingRrp}
+                            placeholder="RRP"
+                            leftSection={<Text size="xs" c="dimmed">RM</Text>}
+                            size="xs"
+                            w={100}
+                          />
+                        </Group>
+                      ) : (
+                        <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
+                          <Text size="sm" fw={500}>{p.name}</Text>
+                          {p.recommendedRetailPriceMyr != null && (
+                            <Text size="xs" c="dimmed">RRP {rm(p.recommendedRetailPriceMyr)}</Text>
+                          )}
+                        </Stack>
+                      )}
+                    </Group>
+                    <Group gap="xs" wrap="nowrap">
+                      {isEditing ? (
+                        <>
                           <ActionIcon
                             size="sm"
-                            variant="subtle"
-                            color="red"
-                            disabled={!!stock && stock.qty > 0}
-                            onClick={() => setPendingDeleteId(p.id)}
+                            color="teal"
+                            variant="light"
+                            loading={renaming}
+                            disabled={
+                              !editingName.trim() ||
+                              (editingName.trim() === p.name &&
+                                (editingRrp || null) === (p.recommendedRetailPriceMyr ?? null))
+                            }
+                            onClick={() => handleSave(p.id)}
                           >
-                            <IconTrash size={13} />
+                            <IconCheck size={13} />
                           </ActionIcon>
-                        </Tooltip>
-                      </>
-                    )}
+                          <ActionIcon size="sm" variant="subtle" color="gray" onClick={cancelEdit}>
+                            <IconX size={13} />
+                          </ActionIcon>
+                        </>
+                      ) : pendingDeleteId === p.id ? (
+                        <>
+                          <Text size="xs" c="dimmed">Delete?</Text>
+                          <Button
+                            size="xs"
+                            color="red"
+                            variant="light"
+                            loading={deleting}
+                            onClick={() => confirmDelete(p.id)}
+                          >
+                            Yes, delete
+                          </Button>
+                          <ActionIcon size="sm" variant="subtle" color="gray" onClick={() => setPendingDeleteId(null)}>
+                            <IconX size={13} />
+                          </ActionIcon>
+                        </>
+                      ) : (
+                        <>
+                          {stock && stock.qty > 0 ? (
+                            <Stack gap={1} align="flex-end" style={{ flexShrink: 0 }}>
+                              <Badge color="violet" variant="light" size="sm">
+                                ×{stock.qty}
+                              </Badge>
+                              <Text size="xs" c="dimmed">
+                                avg {rm(stock.avgCost)}
+                              </Text>
+                            </Stack>
+                          ) : (
+                            <Text size="xs" c="dimmed">0 in stock</Text>
+                          )}
+                          <ActionIcon size="sm" variant="subtle" color="gray" onClick={() => startEdit(p)}>
+                            <IconPencil size={13} />
+                          </ActionIcon>
+                          <Tooltip
+                            label="Sell or remove all stock before deleting"
+                            disabled={!stock || stock.qty === 0}
+                            withArrow
+                          >
+                            <ActionIcon
+                              size="sm"
+                              variant="subtle"
+                              color="red"
+                              disabled={!!stock && stock.qty > 0}
+                              onClick={() => setPendingDeleteId(p.id)}
+                            >
+                              <IconTrash size={13} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </>
+                      )}
+                    </Group>
                   </Group>
-                </Group>
-              </Paper>
+                </Paper>
+              </div>
             );
           })}
-        </Stack>
-      )}
-
-      {totalPages > 1 && (
-        <Pagination
-          value={page}
-          onChange={setPage}
-          total={totalPages}
-          size="sm"
-          color="teal"
-        />
+        </div>
       )}
     </Stack>
   );
 }
 
 // ─── Sort options ─────────────────────────────────────────────────────────────
-
-const PAGE_SIZE_GRID = 24;
-const PAGE_SIZE_LIST = 40;
 
 const SORT_OPTIONS = [
   { value: "name-asc", label: "Name (A–Z)" },
@@ -616,8 +731,8 @@ export default function Stock() {
   const [importOpen, setImportOpen] = useState(false);
   const [addStockOpen, setAddStockOpen] = useState(false);
   const [detailCard, setDetailCard] = useState(null);
-  const [page, setPage] = useState(1);
   const viewportRef = useRef(null);
+  const sealedViewportRef = useRef(null);
   const [view, setViewRaw] = useState(
     () => localStorage.getItem("stock_view") ?? "list",
   );
@@ -625,6 +740,8 @@ export default function Stock() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [localStock, setLocalStock] = useState(null); // null = use global store stock
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selection, setSelection] = useState(() => new Map()); // Map<itemKey, count>
 
   function setView(v) {
     setViewRaw(v);
@@ -748,14 +865,98 @@ export default function Stock() {
     return applySort(matching, sort);
   }, [cardItems, debouncedQuery, sort]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [filtered, view]);
+  const selectedCount = selection.size;
+  const totalCopies = useMemo(
+    () => Array.from(selection.values()).reduce((a, b) => a + b, 0),
+    [selection],
+  );
+  const qtyByKey = useMemo(() => {
+    const m = new Map();
+    for (const it of cardItems) m.set(it.key, it.qty);
+    return m;
+  }, [cardItems]);
 
-  const pageSize = view === "grid" ? PAGE_SIZE_GRID : PAGE_SIZE_LIST;
-  const totalPages = Math.ceil(filtered.length / pageSize);
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const toggleSelect = useCallback((item) => {
+    setSelection((prev) => {
+      const next = new Map(prev);
+      if (next.has(item.key)) next.delete(item.key);
+      else next.set(item.key, item.qty);
+      return next;
+    });
+  }, []);
+
+  const setSelectionCount = useCallback(
+    (key, n) => {
+      const qty = qtyByKey.get(key);
+      if (!qty) return;
+      const clamped = Math.max(1, Math.min(qty, n));
+      setSelection((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Map(prev);
+        next.set(key, clamped);
+        return next;
+      });
+    },
+    [qtyByKey],
+  );
+
+  const selectAllFiltered = useCallback(() => {
+    setSelection(new Map(filtered.map((i) => [i.key, i.qty])));
+  }, [filtered]);
+
+  const deselectAll = useCallback(() => {
+    setSelection(new Map());
+  }, []);
+
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionMode((m) => {
+      if (m) setSelection(new Map());
+      return !m;
+    });
+  }, []);
+
+  useEffect(() => {
+    viewportRef.current?.scrollTo({ top: 0 });
+  }, [debouncedQuery, sort, view, eventFilter]);
+
   const totalUnits = cardItems.reduce((sum, i) => sum + i.qty, 0);
+
+  const listWrapperRef = useRef(null);
+  const listVirtualizer = useVirtualizer({
+    count: view === "list" ? filtered.length : 0,
+    getScrollElement: () => viewportRef.current,
+    estimateSize: () => 64,
+    overscan: 8,
+    scrollMargin: listWrapperRef.current?.offsetTop ?? 0,
+  });
+
+  const gridWrapperRef = useRef(null);
+  const [gridColumns, setGridColumns] = useState(1);
+  useEffect(() => {
+    if (view !== "grid") return;
+    const el = gridWrapperRef.current;
+    if (!el) return;
+    const compute = () => {
+      const width = el.clientWidth;
+      const cols = Math.max(1, Math.floor((width + 8) / 158)); // 150 min + 8 gap
+      setGridColumns(cols);
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [view]);
+
+  const gridRowCount = view === "grid"
+    ? Math.ceil(filtered.length / gridColumns)
+    : 0;
+  const gridVirtualizer = useVirtualizer({
+    count: gridRowCount,
+    getScrollElement: () => viewportRef.current,
+    estimateSize: () => 380,
+    overscan: 4,
+    scrollMargin: gridWrapperRef.current?.offsetTop ?? 0,
+  });
 
   function handleExportCsv() {
     const esc = (v) => {
@@ -938,6 +1139,16 @@ export default function Stock() {
                 >
                   Export
                 </Button>
+                <Tooltip label={selectionMode ? "Exit selection" : "Select cards"}>
+                  <ActionIcon
+                    variant={selectionMode ? "filled" : "subtle"}
+                    color={selectionMode ? "violet" : "gray"}
+                    size="sm"
+                    onClick={toggleSelectionMode}
+                  >
+                    <IconChecks size={15} />
+                  </ActionIcon>
+                </Tooltip>
                 <Group gap={4}>
                   <ActionIcon
                     variant={view === "list" ? "light" : "subtle"}
@@ -988,6 +1199,45 @@ export default function Stock() {
                 </Group>
               )}
 
+              {selectionMode && (
+                <Paper p="xs" withBorder bg="violet.9">
+                  <Group justify="space-between" wrap="wrap" gap="xs">
+                    <Text size="sm" fw={500}>
+                      {selectedCount} card{selectedCount !== 1 ? "s" : ""} selected
+                      {" · "}
+                      {totalCopies} total cop{totalCopies !== 1 ? "ies" : "y"}
+                    </Text>
+                    <Group gap="xs">
+                      <Button
+                        size="xs"
+                        variant="light"
+                        onClick={selectAllFiltered}
+                        disabled={filtered.length === 0}
+                      >
+                        Select all ({filtered.length})
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        onClick={deselectAll}
+                        disabled={selectedCount === 0}
+                      >
+                        Deselect all
+                      </Button>
+                      {/* Future: consumes `selection` Map to move into a collection. */}
+                      <Button
+                        size="xs"
+                        color="violet"
+                        disabled
+                        leftSection={<IconFolderPlus size={13} />}
+                      >
+                        Move to collection…
+                      </Button>
+                    </Group>
+                  </Group>
+                </Paper>
+              )}
+
               {filtered.length === 0 ? (
                 query ? (
                   <Text size="xs" c="dimmed">
@@ -1011,43 +1261,97 @@ export default function Stock() {
                   </Center>
                 )
               ) : view === "list" ? (
-                <Stack gap="sm">
-                  {paged.map((item) => (
-                    <StockRow key={item.key} item={item} />
-                  ))}
-                </Stack>
-              ) : (
-                <Box
+                <div
+                  ref={listWrapperRef}
                   style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fill, minmax(150px, 1fr))",
-                    gap: "var(--mantine-spacing-sm)",
+                    height: listVirtualizer.getTotalSize(),
+                    width: "100%",
+                    position: "relative",
                   }}
                 >
-                  {paged.map((item) => (
-                    <StockGridItem
-                      key={item.key}
-                      item={item}
-                      onCardClick={(id, imageUrl) =>
-                        setDetailCard({ id, imageUrl })
-                      }
-                    />
-                  ))}
-                </Box>
-              )}
-
-              {totalPages > 1 && (
-                <Pagination
-                  value={page}
-                  onChange={(p) => {
-                    setPage(p);
-                    viewportRef.current?.scrollTo({ top: 0 });
+                  {listVirtualizer.getVirtualItems().map((vItem) => {
+                    const item = filtered[vItem.index];
+                    return (
+                      <div
+                        key={item.key}
+                        data-index={vItem.index}
+                        ref={listVirtualizer.measureElement}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${vItem.start - listVirtualizer.options.scrollMargin}px)`,
+                          paddingBottom: "var(--mantine-spacing-sm)",
+                        }}
+                      >
+                        <StockRow
+                          item={item}
+                          selectionMode={selectionMode}
+                          selected={selection.has(item.key)}
+                          selectionCount={selection.get(item.key) ?? 0}
+                          onToggle={toggleSelect}
+                          onCountChange={setSelectionCount}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  ref={gridWrapperRef}
+                  style={{
+                    height: gridVirtualizer.getTotalSize(),
+                    width: "100%",
+                    position: "relative",
                   }}
-                  total={totalPages}
-                  size="sm"
-                  color="violet"
-                />
+                >
+                  {gridVirtualizer.getVirtualItems().map((vRow) => {
+                    const startIdx = vRow.index * gridColumns;
+                    const rowItems = filtered.slice(
+                      startIdx,
+                      startIdx + gridColumns,
+                    );
+                    return (
+                      <div
+                        key={vRow.index}
+                        data-index={vRow.index}
+                        ref={gridVirtualizer.measureElement}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${vRow.start - gridVirtualizer.options.scrollMargin}px)`,
+                          paddingBottom: "var(--mantine-spacing-sm)",
+                        }}
+                      >
+                        <Box
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))`,
+                            gap: "var(--mantine-spacing-sm)",
+                          }}
+                        >
+                          {rowItems.map((item) => (
+                            <StockGridItem
+                              key={item.key}
+                              item={item}
+                              onCardClick={(id, imageUrl) =>
+                                setDetailCard({ id, imageUrl })
+                              }
+                              selectionMode={selectionMode}
+                              selected={selection.has(item.key)}
+                              selectionCount={selection.get(item.key) ?? 0}
+                              onToggle={toggleSelect}
+                              onCountChange={setSelectionCount}
+                            />
+                          ))}
+                        </Box>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </Stack>
           </ScrollArea>
@@ -1058,7 +1362,11 @@ export default function Stock() {
           value="sealed"
           style={{ flex: 1, overflow: "hidden", minHeight: 0 }}
         >
-          <ScrollArea style={{ height: "100%" }} p="md">
+          <ScrollArea
+            style={{ height: "100%" }}
+            p="md"
+            viewportRef={sealedViewportRef}
+          >
             <Stack gap="md" pb="md">
               <SealedCatalog
                 sealedProducts={sealedProducts}
@@ -1068,6 +1376,7 @@ export default function Stock() {
                 sealedStockMap={sealedStockMap}
                 orgId={org?.id}
                 userId={user?.dbId}
+                viewportRef={sealedViewportRef}
               />
             </Stack>
           </ScrollArea>
