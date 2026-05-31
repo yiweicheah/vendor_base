@@ -5,7 +5,7 @@ import {
   Paper, Divider, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconHistory, IconLayoutList, IconLayoutGrid, IconPencil, IconTrash, IconReceipt, IconInfoCircle } from '@tabler/icons-react';
+import { IconHistory, IconLayoutList, IconLayoutGrid, IconPencil, IconTrash, IconReceipt, IconInfoCircle, IconX } from '@tabler/icons-react';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
 import TransactionCard from '../components/History/TransactionCard';
@@ -29,6 +29,25 @@ function formatEventDates(startsAt, endsAt) {
   const e = new Date(endsAt);
   return s.toDateString() === e.toDateString() ? fmt(startsAt) : `${fmt(startsAt)} – ${fmt(endsAt)}`;
 }
+
+// Date-range filter helpers. ymd() formats a Date as a local YYYY-MM-DD (the
+// `T - offset` shift avoids the UTC off-by-one that toISOString() alone causes
+// for users west/east of UTC). toStartTs/toEndTs turn a date-input string into
+// an ISO timestamptz interpreted in local tz — `${d}T..` (with a time part) is
+// parsed as local, unlike a bare 'YYYY-MM-DD' which is parsed as UTC.
+const ymd = (d) => { const t = d.getTimezoneOffset() * 60000; return new Date(d - t).toISOString().slice(0, 10); };
+const toStartTs = (d) => (d ? new Date(`${d}T00:00:00`).toISOString()     : null);
+const toEndTs   = (d) => (d ? new Date(`${d}T23:59:59.999`).toISOString() : null);
+
+// Quick-range presets. range() returns [fromYmd, toYmd] computed at call time,
+// used both to apply the range and to detect which preset (if any) the current
+// selection matches, so its button can render highlighted.
+const DATE_PRESETS = [
+  { key: 'today', label: 'Today', range: () => { const d = new Date(); return [ymd(d), ymd(d)]; } },
+  { key: '7d',    label: '7d',    range: () => { const e = new Date(); const s = new Date(); s.setDate(s.getDate() - 6);  return [ymd(s), ymd(e)]; } },
+  { key: '30d',   label: '30d',   range: () => { const e = new Date(); const s = new Date(); s.setDate(s.getDate() - 29); return [ymd(s), ymd(e)]; } },
+  { key: 'month', label: 'Month', range: () => { const e = new Date(); const s = new Date(e.getFullYear(), e.getMonth(), 1); return [ymd(s), ymd(e)]; } },
+];
 
 // ─── Edit Event modal ─────────────────────────────────────────────────────────
 
@@ -139,6 +158,10 @@ export default function History() {
   const [typeFilter, setTypeFilterRaw]  = useState(() => localStorage.getItem('history_type_filter')    ?? 'all');
   const [creatorFilter, setCreatorFilterRaw]   = useState(() => localStorage.getItem('history_creator_filter')  ?? 'all');
   const [paymentFilter, setPaymentFilterRaw]   = useState(() => localStorage.getItem('history_payment_filter')  ?? 'all');
+  // Date range is session-only (intentionally not persisted) so a saved window
+  // can't silently hide newer transactions on a later visit.
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate]     = useState('');
   const [page, setPage] = useState(1);
   const [eventSearch, setEventSearch] = useState('');
   const [editingEvent, setEditingEvent] = useState(null);
@@ -162,6 +185,10 @@ export default function History() {
   function setTypeFilter(v)    { setTypeFilterRaw(v);     localStorage.setItem('history_type_filter', v);    setPage(1); }
   function setCreatorFilter(v) { setCreatorFilterRaw(v);  localStorage.setItem('history_creator_filter', v); setPage(1); }
   function setPaymentFilter(v) { setPaymentFilterRaw(v);  localStorage.setItem('history_payment_filter', v); setPage(1); }
+  function changeStart(v)      { setStartDate(v);  setPage(1); }
+  function changeEnd(v)        { setEndDate(v);    setPage(1); }
+  function clearDates()        { setStartDate(''); setEndDate(''); setPage(1); }
+  function applyPreset(from, to) { setStartDate(from); setEndDate(to); setPage(1); }
 
   // ─── Server-side data fetching ─────────────────────────────────────────────
   const orgId = org?.id ?? null;
@@ -173,6 +200,7 @@ export default function History() {
       setTypeFilterRaw('all');    localStorage.setItem('history_type_filter',    'all');
       setCreatorFilterRaw('all'); localStorage.setItem('history_creator_filter', 'all');
       setPaymentFilterRaw('all'); localStorage.setItem('history_payment_filter', 'all');
+      setStartDate(''); setEndDate('');
       setPage(1);
     }
     prevOrgIdRef.current = orgId;
@@ -212,6 +240,8 @@ export default function History() {
       sort,
       offset:        (page - 1) * pageSize,
       limit:         pageSize,
+      dateStart:     toStartTs(startDate),
+      dateEnd:       toEndTs(endDate),
     })
       .then((result) => {
         if (cancelled) return;
@@ -226,7 +256,7 @@ export default function History() {
       })
       .finally(() => { if (!cancelled) setPageLoading(false); });
     return () => { cancelled = true; };
-  }, [orgId, eventFilter, typeFilter, creatorFilter, paymentFilter, sort, page, pageSize, historyRev]);
+  }, [orgId, eventFilter, typeFilter, creatorFilter, paymentFilter, startDate, endDate, sort, page, pageSize, historyRev]);
 
   const totalPages = Math.max(1, Math.ceil(pageData.totalCount / pageSize));
 
@@ -271,6 +301,12 @@ export default function History() {
     }
     return opts;
   }, [filterOptions.paymentMethods, paymentFilter]);
+
+  // Which preset (if any) the current range matches — drives button highlight.
+  const activePreset = useMemo(() => {
+    if (!startDate || !endDate) return null;
+    return DATE_PRESETS.find((p) => { const [f, t] = p.range(); return f === startDate && t === endDate; })?.key ?? null;
+  }, [startDate, endDate]);
 
   const selectedEvent = useMemo(
     () => (eventFilter !== 'all' && eventFilter !== '__none__') ? events.find((e) => e.id === eventFilter) ?? null : null,
@@ -530,6 +566,50 @@ export default function History() {
                 w={150}
                 allowDeselect={false}
               />
+            )}
+          </Group>
+
+          <Group gap="xs" wrap="wrap" align="flex-end">
+            <Button.Group>
+              {DATE_PRESETS.map((p) => {
+                const active = activePreset === p.key;
+                return (
+                  <Button
+                    key={p.key}
+                    variant={active ? 'filled' : 'default'}
+                    color={active ? 'violet' : undefined}
+                    size="xs"
+                    onClick={() => applyPreset(...p.range())}
+                  >
+                    {p.label}
+                  </Button>
+                );
+              })}
+            </Button.Group>
+            <TextInput
+              type="date"
+              aria-label="From date"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(e) => changeStart(e.currentTarget.value)}
+              size="xs"
+              w={150}
+              styles={startDate ? { input: { borderColor: 'var(--mantine-color-violet-6)' } } : undefined}
+            />
+            <TextInput
+              type="date"
+              aria-label="To date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => changeEnd(e.currentTarget.value)}
+              size="xs"
+              w={150}
+              styles={endDate ? { input: { borderColor: 'var(--mantine-color-violet-6)' } } : undefined}
+            />
+            {(startDate || endDate) && (
+              <ActionIcon variant="subtle" color="gray" size="sm" title="Clear date range" onClick={clearDates}>
+                <IconX size={14} />
+              </ActionIcon>
             )}
           </Group>
 

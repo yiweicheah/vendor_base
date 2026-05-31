@@ -186,7 +186,9 @@ export async function loadStock(orgId, { eventId } = {}) {
  * Paginated transaction header list for the History page. Filters, sort, and
  * pagination run server-side via the get_org_transactions_page RPC — the
  * client never holds the full transactions array. Pass null for any filter to
- * disable it; eventId '__none__' maps to the walk-in-only filter.
+ * disable it; eventId '__none__' maps to the walk-in-only filter. dateStart /
+ * dateEnd are ISO timestamptz bounds on created_at (inclusive); null on either
+ * side is open-ended.
  *
  * Returns { rows, totalCount }. Each row carries the parent tx fields and
  * precomputed scalar aggregates the collapsed History row needs — but NOT
@@ -206,6 +208,8 @@ export async function loadTransactionsPage(orgId, {
   sort = 'date',           // 'date' | 'total' | 'unit'
   offset = 0,
   limit = 20,
+  dateStart = null,        // ISO timestamptz, inclusive; null = open-ended
+  dateEnd = null,          // ISO timestamptz, inclusive (end-of-day); null = open-ended
 } = {}) {
   const params = {
     p_org_id:          orgId,
@@ -217,6 +221,8 @@ export async function loadTransactionsPage(orgId, {
     p_sort:            sort,
     p_offset:          offset,
     p_limit:           limit,
+    p_date_start:      dateStart,
+    p_date_end:        dateEnd,
   };
   const { data, error } = await supabase.rpc('get_org_transactions_page', params);
   if (error) throw error;

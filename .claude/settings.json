@@ -22,7 +22,8 @@
       "Bash(npm install *)",
       "Bash(find /Users/cyw -name \"memory.md\" -o -name \"memory.txt\" 2>/dev/null | head -5)",
       "Read(//Users/cyw/**)",
-      "WebFetch(domain:tcgcsv.com)"
+      "WebFetch(domain:tcgcsv.com)",
+      "Bash(npx eslint *)"
     ],
     "additionalDirectories": [
       "/Users/cyw/Developer/Web/vendor_base_api"
