@@ -15,6 +15,7 @@ import {
   deleteEvent as deleteEventDb,
   loadTransactionsPage,
   loadHistoryFilterOptions,
+  loadEventBreakdown,
 } from '../lib/db';
 import { rm } from '../lib/format';
 
@@ -39,11 +40,22 @@ const ymd = (d) => { const t = d.getTimezoneOffset() * 60000; return new Date(d 
 const toStartTs = (d) => (d ? new Date(`${d}T00:00:00`).toISOString()     : null);
 const toEndTs   = (d) => (d ? new Date(`${d}T23:59:59.999`).toISOString() : null);
 
+// Short label for an active range, shown on the date-scoped Event Summary title.
+// e.g. "1–7 Jun" · one-sided: "From 1 Jun" / "Until 7 Jun".
+function formatRangeLabel(start, end) {
+  const fmt = (d) => new Date(`${d}T00:00:00`).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
+  if (start && end) return start === end ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
+  if (start) return `From ${fmt(start)}`;
+  if (end)   return `Until ${fmt(end)}`;
+  return '';
+}
+
 // Quick-range presets. range() returns [fromYmd, toYmd] computed at call time,
 // used both to apply the range and to detect which preset (if any) the current
 // selection matches, so its button can render highlighted.
 const DATE_PRESETS = [
-  { key: 'today', label: 'Today', range: () => { const d = new Date(); return [ymd(d), ymd(d)]; } },
+  { key: 'today',     label: 'Today',     range: () => { const d = new Date(); return [ymd(d), ymd(d)]; } },
+  { key: 'yesterday', label: 'Yesterday', range: () => { const d = new Date(); d.setDate(d.getDate() - 1); return [ymd(d), ymd(d)]; } },
   { key: '7d',    label: '7d',    range: () => { const e = new Date(); const s = new Date(); s.setDate(s.getDate() - 6);  return [ymd(s), ymd(e)]; } },
   { key: '30d',   label: '30d',   range: () => { const e = new Date(); const s = new Date(); s.setDate(s.getDate() - 29); return [ymd(s), ymd(e)]; } },
   { key: 'month', label: 'Month', range: () => { const e = new Date(); const s = new Date(e.getFullYear(), e.getMonth(), 1); return [ymd(s), ymd(e)]; } },
@@ -175,9 +187,13 @@ export default function History() {
   const [filterOptions, setFilterOptions] = useState({ creators: [], paymentMethods: [], hasAny: false });
   // null until first successful/failed load for the current org — gates the initial spinner only
   const [optionsLoadedForOrg, setOptionsLoadedForOrg] = useState(null);
+  // Date-scoped event breakdown — only fetched while a date range is active (see
+  // effect below). The org-wide store breakdown stays untouched (Dashboard reads it).
+  const [scopedBreakdown, setScopedBreakdown] = useState([]);
 
   const canEdit = role === 'owner' || role === 'admin';
   const pageSize = view === 'grid' ? PAGE_SIZE_GRID : PAGE_SIZE_LIST;
+  const isDateScoped = !!(startDate || endDate);
 
   function setView(v)          { setViewRaw(v);           localStorage.setItem('history_view', v);           setPage(1); }
   function setSort(v)          { setSortRaw(v);           localStorage.setItem('history_sort', v);           setPage(1); }
@@ -258,6 +274,24 @@ export default function History() {
     return () => { cancelled = true; };
   }, [orgId, eventFilter, typeFilter, creatorFilter, paymentFilter, startDate, endDate, sort, page, pageSize, historyRev]);
 
+  // Date-scoped event breakdown: fetch only while a range is active, keyed on the
+  // range (not eventFilter — the RPC returns all events; the selected row is picked
+  // in selectedEventBreakdown). When no range, the store breakdown is used instead.
+  useEffect(() => {
+    // No cleanup-clear needed: selectedEventBreakdown only reads scopedBreakdown
+    // while isDateScoped, so a stale value left here when the range clears is unread.
+    if (!orgId || !isDateScoped) return;
+    let cancelled = false;
+    loadEventBreakdown(orgId, { dateStart: toStartTs(startDate), dateEnd: toEndTs(endDate) })
+      .then((rows) => { if (!cancelled) setScopedBreakdown(rows); })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('loadEventBreakdown (scoped) error:', err);
+        notifications.show({ title: 'Failed to load summary', message: err.message, color: 'red' });
+      });
+    return () => { cancelled = true; };
+  }, [orgId, isDateScoped, startDate, endDate, historyRev]);
+
   const totalPages = Math.max(1, Math.ceil(pageData.totalCount / pageSize));
 
   async function handleDeleteConfirm() {
@@ -313,15 +347,14 @@ export default function History() {
     [eventFilter, events],
   );
 
-  const selectedEventBreakdown = useMemo(
-    () => eventFilter !== 'all'
-      ? (eventBreakdown.find((e) => e.id === eventFilter) ?? {
-          id: eventFilter, totalOut: 0, totalIn: 0,
-          grossProfit: 0, profitComplete: true, miscCostTotal: 0, netPL: 0,
-        })
-      : null,
-    [eventFilter, eventBreakdown],
-  );
+  const selectedEventBreakdown = useMemo(() => {
+    if (eventFilter === 'all') return null;
+    const source = isDateScoped ? scopedBreakdown : eventBreakdown;
+    return source.find((e) => e.id === eventFilter) ?? {
+      id: eventFilter, totalOut: 0, totalIn: 0,
+      grossProfit: 0, profitComplete: true, miscCostTotal: 0, netPL: 0,
+    };
+  }, [eventFilter, eventBreakdown, scopedBreakdown, isDateScoped]);
 
   const handleRowsScrollTop = useCallback(() => {
     viewportRef.current?.scrollTo({ top: 0 });
@@ -470,10 +503,15 @@ export default function History() {
             <Paper withBorder p="sm" radius="md">
               <Stack gap="xs">
                 <Group justify="space-between" wrap="nowrap">
-                  <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
-                    Event Summary
-                  </Text>
-                  {canEdit && selectedEventBreakdown.id !== '__none__' && (
+                  <Group gap={6} wrap="nowrap" align="baseline">
+                    <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>
+                      Event Summary
+                    </Text>
+                    {isDateScoped && (
+                      <Text size="xs" c="dimmed">· {formatRangeLabel(startDate, endDate)}</Text>
+                    )}
+                  </Group>
+                  {!isDateScoped && canEdit && selectedEventBreakdown.id !== '__none__' && (
                     <ActionIcon
                       variant="subtle"
                       color="gray"
@@ -512,28 +550,34 @@ export default function History() {
                     {sign(selectedEventBreakdown.grossProfit)}{rm(selectedEventBreakdown.grossProfit)}
                   </Text>
                 </Group>
-                <Group justify="space-between">
-                  <Text size="xs" c="dimmed">Misc costs</Text>
-                  <Text size="xs" c="dimmed">−{rm(selectedEventBreakdown.miscCostTotal)}</Text>
-                </Group>
-                <Divider variant="dashed" />
-                <Group justify="space-between">
-                  <Group gap={4} wrap="nowrap">
-                    <Text size="xs" fw={600}>Est. Net P&L</Text>
-                    <Tooltip
-                      label="Net P&L is estimated — COGS may be incorrect if a previous import or purchase price was changed after the sale."
-                      multiline
-                      w={240}
-                      withArrow
-                      events={{ hover: true, focus: true, touch: true }}
-                    >
-                      <IconInfoCircle size={12} style={{ color: 'var(--mantine-color-dimmed)', cursor: 'default', flexShrink: 0 }} />
-                    </Tooltip>
-                  </Group>
-                  <Text size="xs" fw={600} c={netColor(selectedEventBreakdown.netPL)}>
-                    {sign(selectedEventBreakdown.netPL)}{rm(selectedEventBreakdown.netPL)}
-                  </Text>
-                </Group>
+                {/* Misc costs are flat per-event (no date), so they're hidden when a
+                    range is active — Net P&L depends on them, so it's hidden too. */}
+                {!isDateScoped && (
+                  <>
+                    <Group justify="space-between">
+                      <Text size="xs" c="dimmed">Misc costs</Text>
+                      <Text size="xs" c="dimmed">−{rm(selectedEventBreakdown.miscCostTotal)}</Text>
+                    </Group>
+                    <Divider variant="dashed" />
+                    <Group justify="space-between">
+                      <Group gap={4} wrap="nowrap">
+                        <Text size="xs" fw={600}>Est. Net P&L</Text>
+                        <Tooltip
+                          label="Net P&L is estimated — COGS may be incorrect if a previous import or purchase price was changed after the sale."
+                          multiline
+                          w={240}
+                          withArrow
+                          events={{ hover: true, focus: true, touch: true }}
+                        >
+                          <IconInfoCircle size={12} style={{ color: 'var(--mantine-color-dimmed)', cursor: 'default', flexShrink: 0 }} />
+                        </Tooltip>
+                      </Group>
+                      <Text size="xs" fw={600} c={netColor(selectedEventBreakdown.netPL)}>
+                        {sign(selectedEventBreakdown.netPL)}{rm(selectedEventBreakdown.netPL)}
+                      </Text>
+                    </Group>
+                  </>
+                )}
               </Stack>
             </Paper>
           )}

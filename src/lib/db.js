@@ -136,9 +136,17 @@ export async function loadMetrics(orgId) {
  * Per-event breakdown for an org. Server-side equivalent of
  * computeMetrics(...).eventBreakdown. Walk-in rows are exposed with
  * id='__none__' (matching the JS contract used by ByEventSection).
+ *
+ * Optional dateStart/dateEnd (ISO timestamptz, inclusive) scope the breakdown to
+ * a created_at window — used by the History page's date filter. Omit them (the
+ * default) for the org-wide breakdown the store/Dashboard rely on.
  */
-export async function loadEventBreakdown(orgId) {
-  const { data, error } = await supabase.rpc('get_org_event_breakdown', { p_org_id: orgId });
+export async function loadEventBreakdown(orgId, { dateStart = null, dateEnd = null } = {}) {
+  const { data, error } = await supabase.rpc('get_org_event_breakdown', {
+    p_org_id:     orgId,
+    p_date_start: dateStart,
+    p_date_end:   dateEnd,
+  });
   if (error) throw error;
   return toCamel(data ?? []).map((row) => {
     const r = fixNetPL(row);
